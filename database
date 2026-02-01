@@ -1,7 +1,0 @@
-import sqlite3
-
-def create_database():   # Создание базы данных и всех таблиц
-    conn = sqlite3.connect('school_library.db')   # Подключаемся к базе данных 
-    cursor = conn.cursor()
-    
-    print("Создание базы данных 'school_library.db'")
