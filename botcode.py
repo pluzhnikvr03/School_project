@@ -1,98 +1,175 @@
 import telebot
-import config
 from telebot import types
+import config
+import database
 
-bot = telebot.TeleBot(config.token)
+# Создаем объект бота
+API_TOKEN = config.token
+bot = telebot.TeleBot(API_TOKEN)
 
-# База данных пользователей
-users_db = {}  # {user_id: {'name': 'имя', 'class': '10v', 'books': []}}
-books_bd = {}  # {user_id: [book_id]}
-# Состояние для отслеживания
-user_registration_state = {} # пользователь в процессе регистрации
-user_pending_action = {} # {user_id: 'book_id'}
+# Создаем базу данных при запуске
+database.create_database()
 
-# Создает инлайн-клавиатуру
-def create_inline_keyboard():
+# Словари для хранения состояний
+user_states = {}
+pending_actions = {}
+
+
+# Создание кнопок
+def create_keyboard(book_id, has_book=False):
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.row(
-        types.InlineKeyboardButton("Взять книгу", callback_data="take"),
-        types.InlineKeyboardButton("Вернуть книгу", callback_data="return")
-    )
+
+    if has_book:
+        keyboard.row(
+            types.InlineKeyboardButton("✅ Вернуть книгу", callback_data=f"return_{book_id}"),
+            types.InlineKeyboardButton("❌ Отмена", callback_data="cancel")
+        )
+    else:
+        keyboard.row(
+            types.InlineKeyboardButton("✅ Взять книгу", callback_data=f"take_{book_id}"),
+            types.InlineKeyboardButton("❌ Отмена", callback_data="cancel")
+        )
 
     return keyboard
 
 
-# Обработчик нажатий на inline-кнопки
+# Обработка кнопок
 @bot.callback_query_handler(func=lambda call: True)
-def handle_inline_buttons(call):
+def handle_buttons(call):
     user_id = call.from_user.id
-
-    # Обязательно отвечаем на callback (убирает "часики" на кнопке)
     bot.answer_callback_query(call.id)
-    # Если пользователь не зарегистрирован, предлагаем начать с /start
-    if user_id not in users_db:
+
+    if not database.is_user_registered(user_id):
         bot.send_message(call.message.chat.id, "Сначала зарегистрируйтесь через /start")
         return
 
-    book_id = user_pending_action[user_id]
+    if call.data == "cancel":
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        return
 
-    # Обработка кнопки "Взять книгу"
-    if call.data == "take":
-        if user_id not in books_bd:
-            books_bd[user_id] = []
-        books_bd[user_id].append(book_id)
-        bot.send_message(call.message.chat.id, f"книга взята! {books_bd[user_id]}")
+    if call.data.startswith("take_"):
+        book_id = call.data.replace("take_", "")
 
-    # Обработка кнопки "Вернуть книгу"
-    elif call.data == "return":
-        if book_id in books_bd[user_id]:
-            books_bd[user_id].remove(book_id)
-            bot.send_message(call.message.chat.id, f"вы вернули книгу {books_bd[user_id]}")
+        if database.take_book(user_id, book_id):
+            bot.edit_message_text(
+                f"📚 Книга {book_id} успешно взята!",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                f"❌ Ошибка при взятии книги {book_id}",
+                call.message.chat.id,
+                call.message.message_id
+            )
+
+    elif call.data.startswith("return_"):
+        book_id = call.data.replace("return_", "")
+
+        if database.return_book(user_id, book_id):
+            bot.edit_message_text(
+                f"📚 Книга {book_id} успешно возвращена!",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                f"❌ Ошибка при возврате книги {book_id}",
+                call.message.chat.id,
+                call.message.message_id
+            )
 
 
-# Обработчик команды /start
+# Обработка команд
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
+def start_command(message):
     user_id = message.from_user.id
-    if user_id in users_db:
-        user_name = users_db[user_id]['name']
-        bot.reply_to(message, f"Привет, {user_name}!\nОтсканируйте qr для взятия или сдачи книги")
+
+    if database.is_user_registered(user_id):
+        bot.reply_to(message,
+                     "Привет! Наведи камеру на QR-код с учебника для работы с книгой.")
     else:
-        user_registration_state[user_id] = True
-        bot.reply_to(message, "Добро пожаловать!\nВведите ваше ФИО и класс обучения:")
+        user_states[user_id] = True
+        bot.reply_to(message,
+                     "Добро пожаловать! Для регистрации введи:\n"
+                     "Фамилия Имя Класс\n\n"
+                     "Пример: Иванов Иван 10А")
 
 
-# Обработчик регистрации пользователя
-@bot.message_handler(func=lambda message: user_registration_state.get(message.from_user.id, False))
+@bot.message_handler(commands=['books'])
+def books_command(message):
+    user_id = message.from_user.id
+
+    if not database.is_user_registered(user_id):
+        bot.reply_to(message, "Сначала зарегистрируйся через /start")
+        return
+
+    books = database.get_user_books(user_id)
+
+    if not books:
+        bot.reply_to(message, "У тебя пока нет книг")
+        return
+
+    book_list = []
+    for book in books:
+        book_id, status, date = book
+        status_text = "на руках" if status == "taken" else "возвращена"
+        book_list.append(f"• {book_id} ({status_text}, {date})")
+
+    bot.reply_to(message, "📚 Твои книги:\n\n" + "\n".join(book_list))
+
+
+# Обработка регистрации
+@bot.message_handler(func=lambda message: user_states.get(message.from_user.id, False))
 def handle_registration(message):
     user_id = message.from_user.id
-    n = ' '.join(message.text.split()[:3])
-    k = message.text.split()[-1]
+    text = message.text.strip()
 
-    # Регистрируем пользователя
-    users_db[user_id] = {
-        'name': n,
-        'class': k,
-        'books': [],  # пустой список книг
-    }
+    parts = text.split()
+    if len(parts) < 3:
+        bot.reply_to(message,
+                     "Неверный формат. Нужно: Фамилия Имя Класс\n"
+                     "Пример: Иванов Иван 10А")
+        return
 
-    # Удаляем пользователя из состояния регистрации
-    del user_registration_state[user_id]
-    bot.reply_to(message, f"Регистрация завершена!\nДобро пожаловать в библиотеку, {n}\nОтсканируйте qr для взятия или сдачи книги!")
+    name = ' '.join(parts[:2])
+    user_class = parts[-1]
+
+    if database.register_user(user_id, name, user_class):
+        del user_states[user_id]
+        bot.reply_to(message,
+                     f"✅ Регистрация успешна!\n"
+                     f"Привет, {name}!\n"
+                     f"Твой класс: {user_class}\n\n"
+                     f"Теперь можешь сканировать QR-коды с учебников.")
+    else:
+        bot.reply_to(message, "❌ Ошибка регистрации. Возможно, ты уже зарегистрирован.")
 
 
-# Обработчик всех остальных сообщений
+# Обработка QR-кодов
 @bot.message_handler(func=lambda message: True)
-def handle_other_messages(message):
+def handle_qr_code(message):
     user_id = message.from_user.id
+    book_id = message.text.strip()
 
-    # Если пользователь не зарегистрирован, предлагаем начать с /start
-    if user_id not in users_db:
-        bot.reply_to(message, "Для начала работы используйте команду /start")
-    if message.text.isdigit():
-        book_id = message.text
-        user_pending_action[user_id] = book_id
-        bot.reply_to(message, "выберете действие:", reply_markup=create_inline_keyboard())
+    if not database.is_user_registered(user_id):
+        bot.reply_to(message, "Сначала зарегистрируйся через /start")
+        return
+
+    has_book = database.user_has_book(user_id, book_id)
+    keyboard = create_keyboard(book_id, has_book)
+
+    if has_book:
+        text = f"📚 Книга {book_id} уже у тебя. Вернуть?"
+    else:
+        text = f"📚 Найдена книга: {book_id}. Взять?"
+
+    bot.reply_to(message, text, reply_markup=keyboard)
 
 
-bot.infinity_polling()
+# Запуск бота
+if __name__ == '__main__':
+    print("🤖 Бот запущен!")
+    print("📂 База данных: library.db")
+    print("🔗 Используй /start в боте")
+    bot.infinity_polling()
