@@ -17,7 +17,6 @@ user_context = {}  # {user_id: 'action'} - контекст действия (ta
 def create_main_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
-        "Мои книги",  # Показать все книги пользователя
         "Взять книгу",  # Начать процесс взятия книги
         "Вернуть книгу",  # Начать процесс возврата книги
     ]
