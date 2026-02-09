@@ -1,7 +1,8 @@
 import telebot
+import config
 from telebot import types
 
-bot = telebot.TeleBot(token)
+bot = telebot.TeleBot(config.token)
 
 # База данных пользователей
 users_db = {}  # {user_id: {'name': 'имя', 'class/subject': '10v/математика', 'role': 'student/teacher', 'books': []}}
@@ -227,4 +228,5 @@ def handle_other_messages(message):
 
 
 bot.infinity_polling()
+
 
