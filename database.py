@@ -7,7 +7,7 @@ def create_database(): # создаем базу данных и таблицы
 
     # таблица "users"
     cursor.execute('''
-     CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE IF NOT EXISTS users (
          id INTEGER PRIMARY KEY AUTOINCREMENT,  # id пользователя, увеличивается автоматически
          tg_id INTEGER UNIQUE NOT NULL,         # Telegram ID пользователя (уникальный, обязательный)
          FIO TEXT NOT NULL,                     # ФИО пользователя (обязательное поле)
@@ -17,7 +17,7 @@ def create_database(): # создаем базу данных и таблицы
 
     # таблица "books"
     cursor.execute('''
-     CREATE TABLE IF NOT EXISTS books (
+    CREATE TABLE IF NOT EXISTS books (
          id INTEGER PRIMARY KEY AUTOINCREMENT,  # id записи, увеличивается автоматически
          qr_code TEXT UNIQUE NOT NULL,          # id книги (берется из QR-кода)
          subject TEXT NOT NULL,                 # предмет + класс учебника
@@ -197,4 +197,5 @@ def user_has_book(tg_id, qr_code):
     
     conn.close()  # закрываем базу данных
     return has_book  # возвращаем True если книга у пользователя, False если нет
+
 
