@@ -1,5 +1,4 @@
 import telebot
-token='8281529454:AAEPnPyn1HwsOzMXuBHo47i6LTFC3wPLTtU'
 from telebot import types
 
 bot = telebot.TeleBot(token)
@@ -228,3 +227,4 @@ def handle_other_messages(message):
 
 
 bot.infinity_polling()
+
