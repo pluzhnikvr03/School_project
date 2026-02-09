@@ -1,5 +1,4 @@
-# библиотека для работы с базой данных SQLite
-import sqlite3
+import sqlite3  # библиотека для работы с базой данных SQLite
 
 
 def create_database(): # создаем базу данных и таблицы
@@ -198,3 +197,4 @@ def user_has_book(tg_id, qr_code):
     
     conn.close()  # закрываем базу данных
     return has_book  # возвращаем True если книга у пользователя, False если нет
+
