@@ -5,24 +5,24 @@ def create_database(): # создаем базу данных и таблицы
     conn = sqlite3.connect('library.db') # создаем или подключаемся к уже созданному файлу базы данных "library.db"
     cursor = conn.cursor() # создаем курсор (объект для выполнения sql команд)
 
-    # таблица "users"
+    # таблица "users" (id пользователя, Telegram ID, ФИО, класс)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
-         id INTEGER PRIMARY KEY AUTOINCREMENT,  # id пользователя, увеличивается автоматически
-         tg_id INTEGER UNIQUE NOT NULL,         # Telegram ID пользователя (уникальный, обязательный)
-         FIO TEXT NOT NULL,                     # ФИО пользователя (обязательное поле)
-         class TEXT NOT NULL                    # класс пользователя (обязательное поле)
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         tg_id INTEGER UNIQUE NOT NULL,
+         FIO TEXT NOT NULL,
+         class TEXT NOT NULL
      )
      ''')
 
-    # таблица "books"
+    # таблица "books" (id записи, id книги, предмет + класс книги, автор, год издания)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS books (
-         id INTEGER PRIMARY KEY AUTOINCREMENT,  # id записи, увеличивается автоматически
-         qr_code TEXT UNIQUE NOT NULL,          # id книги (берется из QR-кода)
-         subject TEXT NOT NULL,                 # предмет + класс учебника
-         author TEXT NOT NULL,                  # автор учебника
-         year TEXT NOT NULL                     # год издания
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         qr_code TEXT UNIQUE NOT NULL,
+         subject TEXT NOT NULL,
+         author TEXT NOT NULL,
+         year TEXT NOT NULL
      )
      ''')
 
@@ -197,5 +197,3 @@ def user_has_book(tg_id, qr_code):
     
     conn.close()  # закрываем базу данных
     return has_book  # возвращаем True если книга у пользователя, False если нет
-
-
