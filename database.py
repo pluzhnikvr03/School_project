@@ -197,3 +197,26 @@ def user_has_book(tg_id, qr_code):
     
     conn.close()  # закрываем базу данных
     return has_book  # возвращаем True если книга у пользователя, False если нет
+
+
+# функция возвращает все книги, которые брал пользователь
+def get_user_books(tg_id):  
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()
+    # ищем все записи о книгах этого пользователя
+    # соединяем три таблицы: records, books и users
+        cursor.execute('''                                       
+        SELECT books.subject, books.author, books.year, records.issue_date, records.return_date
+        FROM records
+        JOIN books ON records.book_id = books.id      # соединяем с таблицей books
+        JOIN users ON records.user_id = users.id      # соединяем с таблицей users
+        WHERE users.tg_id = ?                         # ищем по Telegram ID
+        ORDER BY records.issue_date DESC              # сортируем (по убыванию) по дате выдачи (новые сверху)
+    ''', (tg_id,))
+    
+    books = cursor.fetchall()  # получаем все найденные записи
+    conn.close()  # закрываем базу данных
+    return books  # возвращаем список книг
+
+
+
