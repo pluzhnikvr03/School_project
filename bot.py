@@ -1,7 +1,6 @@
 import telebot
 from telebot import types
-
-token = '8281529454:AAEPnPyn1HwsOzMXuBHo47i6LTFC3wPLTtU'
+import config
 from database import *
 
 create_database()
