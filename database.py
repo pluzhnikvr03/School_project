@@ -206,13 +206,13 @@ def get_user_books(tg_id):
     # ищем все записи о книгах этого пользователя
     # соединяем три таблицы: records, books и users
         cursor.execute('''                                       
-        SELECT books.subject, books.author, books.year, records.issue_date, records.return_date
-        FROM records
-        JOIN books ON records.book_id = books.id      # соединяем с таблицей books
-        JOIN users ON records.user_id = users.id      # соединяем с таблицей users
-        WHERE users.tg_id = ?                         # ищем по Telegram ID
-        ORDER BY records.issue_date DESC              # сортируем (по убыванию) по дате выдачи (новые сверху)
-    ''', (tg_id,))
+            SELECT books.subject, books.author, books.year, records.issue_date, records.return_date
+            FROM records
+            JOIN books ON records.book_id = books.id      # соединяем с таблицей books
+            JOIN users ON records.user_id = users.id      # соединяем с таблицей users
+            WHERE users.tg_id = ?                         # ищем по Telegram ID
+            ORDER BY records.issue_date DESC              # сортируем (по убыванию) по дате выдачи (новые сверху)
+        ''', (tg_id,))
     
     books = cursor.fetchall()  # получаем все найденные записи
     conn.close()  # закрываем базу данных
@@ -261,3 +261,4 @@ if __name__ == "__main__":  # выполнится ТОЛЬКО если зап�
     create_database()  # вызываем функцию create_database(), которая создаст таблицы users, books, records
     add_books_to_database()  # добавляем тестовые книги в базу и генерируем QR-коды
     print("\nВСЁ ГОТОВО! Теперь можно запускать бота.")  # выводим сообщение о готовности системы
+
