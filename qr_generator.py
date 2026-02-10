@@ -29,7 +29,7 @@ def generate_qr_for_book(book_info, folder="qrcodes"):  # book_info - инфор
 
 # функция генерирует QR-коды для списка книг
 def generate_all_qr_codes(books_list, folder="qrcodes"):  # books_list - список книг в любом формате; folder - папка для сохранения всех QR-кодов
-  created_files = []  # создаем пустой список для хранения путей к созданным файлам
+    created_files = []  # создаем пустой список для хранения путей к созданным файлам
     for book in books_list:  # проходим по всем книгам в списке
         try:  # пытаемся сгенерировать QR-код для текущей книги
             filename = generate_qr_for_book(book, folder)
