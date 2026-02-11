@@ -12,7 +12,7 @@ user_waiting_for_data = {}  # {user_id: True} - ожидает ввода дан
 user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}}
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
-teacher_status[1615187103] = True
+teacher_status[1615187103] = True  # временный админ
 
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
 
@@ -316,3 +316,4 @@ def handle_all_messages(message):
 # ========== ЗАПУСК БОТА ==========
 
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
+
