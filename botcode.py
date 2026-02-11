@@ -1,11 +1,11 @@
 import telebot
 from telebot import types
-
+import config  # берем токен из config.py
 from database import *
 
 create_database()
 
-bot = telebot.TeleBot(token)
+bot = telebot.TeleBot(config.token)
 
 # СОСТОЯНИЯ для управления диалогом
 user_waiting_for_data = {}  # {user_id: True} - ожидает ввода данных
@@ -316,4 +316,5 @@ def handle_all_messages(message):
 # ========== ЗАПУСК БОТА ==========
 
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
+
 
