@@ -47,9 +47,7 @@ def remove_keyboard():
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     user_id = message.from_user.id
-    if user_id not in teacher_status:
-        teacher_status[user_id] = False
-
+    
     if is_user_registered(user_id):
         # Проверяем статус учителя
         if teacher_status[user_id]:
@@ -100,7 +98,8 @@ def handle_registration_data(message):
     user_id = message.from_user.id
     text = message.text.strip()
     parts = text.split()
-
+    if user_id not in teacher_status:
+        teacher_status[user_id] = False
     if len(parts) < 4:
         error_text = """
 Недостаточно данных!
@@ -156,6 +155,7 @@ def handle_inline_buttons(call):
 
         # Регистрируем пользователя в зависимости от выбранной роли
         if role == "student":
+            teacher_status[user_id] = True
             # Для ученика additional = класс
             if register_user(user_id, fio, additional):
                 success_text = f"""
@@ -316,4 +316,5 @@ def handle_all_messages(message):
 # ========== ЗАПУСК БОТА ==========
 
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
+
 
