@@ -5,13 +5,15 @@ def create_database():  # создаем базу данных и таблицы
     conn = sqlite3.connect('library.db')  # создаем или подключаемся к уже созданному файлу базы данных "library.db"
     cursor = conn.cursor()  # создаем курсор (объект для выполнения sql команд)
 
-    # таблица "users" (id пользователя, Telegram ID, ФИО, класс)
+    # таблица "users" (id пользователя, Telegram ID, ФИО, класс, статус(учитель/ученик), разрешение)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
          id INTEGER PRIMARY KEY AUTOINCREMENT,
          tg_id INTEGER UNIQUE NOT NULL,
          FIO TEXT NOT NULL,
-         class TEXT NOT NULL
+         class TEXT NOT NULL,
+         status TEXT NOT NULL,
+         permit BOOLEAN NOT NULL
      )
      ''')
 
@@ -54,14 +56,14 @@ def is_user_registered(tg_id):
 
 
 # функция регистрации нового пользователя
-def register_user(tg_id, fio, user_class):
+def register_user(tg_id, fio, user_class, status, permit=False):
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()
     try:  # пробуем зарегистрировать пользователя
         # добавляем нового пользователя в таблицу users
-        cursor.execute('INSERT INTO users (tg_id, FIO, class) VALUES (?, ?, ?)',
-                       # вставляем данные (tg_id, ФИО, класс подставляются вместо ?, ?, ?)
-                       (tg_id, fio, user_class))
+        cursor.execute('INSERT INTO users (tg_id, FIO, class, status, permit) VALUES (?, ?, ?, ?, ?)',
+                       # вставляем данные (tg_id, ФИО, класс, статус, разрешение подставляются вместо ?, ?, ?, ?, ?)
+                       (tg_id, fio, user_class, status, permit))
         conn.commit()  # сохраняем изменения
         return True  # возвращаем True, если регистрация прошла успешно
 
@@ -70,6 +72,26 @@ def register_user(tg_id, fio, user_class):
 
     finally:  # выполняем вне зависимости от получения ошибки(т.е. в любом случае)
         conn.close()  # закрываем базу данных
+
+
+# функция проверки разрешения пользователя
+def check_user_permit(tg_id):
+    conn = sqlite3.connect('library.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT permit FROM users WHERE tg_id = ?', (tg_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else False
+
+
+# функция получения статуса пользователя
+def get_user_status(tg_id):
+    conn = sqlite3.connect('library.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT status FROM users WHERE tg_id = ?', (tg_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 
 # функция взятия книги
@@ -96,10 +118,15 @@ def take_book(tg_id, qr_code):
         conn.close()  # закрываем базу данных
         return False
 
-    # создаем новую запись о выдаче книги
+    # cоздаём новую запись в таблице records о выдаче
     cursor.execute('INSERT INTO records (user_id, book_id) VALUES (?, ?)',
-                   # cоздаём новую запись в таблице records о выдаче
                    (user[0], book[0]))  # user[0] - id пользователя, book[0] - id книги
+
+    # проверяем, сколько строк обновилось
+    if cursor.rowcount == 0:
+        conn.close()
+        return False  # если ничего не обновилось - книга не у пользователя!
+
     conn.commit()  # сохраняем изменения
     conn.close()  # закрываем базу данных
     return True  # возвращаем True - книга успешно взята
@@ -124,6 +151,11 @@ def return_book(tg_id, qr_code):
         SET return_date = date('now')
         WHERE user_id = ? AND book_id = ? AND return_date IS NULL
     ''', (user[0], book[0]))  # user[0] - id пользователя, book[0] - id книги
+
+    # проверяем, сколько строк обновилось
+    if cursor.rowcount == 0:
+        conn.close()
+        return False  # если ничего не обновилось - книга не у пользователя!
 
     conn.commit()  # сохраняем изменения
     conn.close()  # закрываем соединение
@@ -213,10 +245,10 @@ def get_user_books(tg_id):
     cursor.execute('''                                       
             SELECT books.subject, books.author, books.year, records.issue_date, records.return_date
             FROM records
-            JOIN books ON records.book_id = books.id      # соединяем с таблицей books
-            JOIN users ON records.user_id = users.id      # соединяем с таблицей users
-            WHERE users.tg_id = ?                         # ищем по Telegram ID
-            ORDER BY records.issue_date DESC              # сортируем (по убыванию) по дате выдачи (новые сверху)
+            JOIN books ON records.book_id = books.id
+            JOIN users ON records.user_id = users.id
+            WHERE users.tg_id = ?
+            ORDER BY records.issue_date DESC
         ''', (tg_id,))
 
 
