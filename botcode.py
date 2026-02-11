@@ -14,6 +14,7 @@ user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
 teacher_status[1615187103] = True  # временный админ
 
+
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
 
 def create_role_keyboard():
@@ -35,6 +36,7 @@ def create_book_action_keyboard(qr_code):
     )
     return keyboard
 
+
 def remove_keyboard():
     """
     Создает "пустую" клавиатуру, которая убирает все кнопки
@@ -47,23 +49,27 @@ def remove_keyboard():
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     user_id = message.from_user.id
-    
+
+    # Добавляем пользователя в teacher_status если его нет
+    if user_id not in teacher_status:
+        teacher_status[user_id] = False
+
     if is_user_registered(user_id):
-        # Проверяем статус учителя
-        if teacher_status[user_id]:
+        # Проверяем разрешение из БД
+        if check_user_permit(user_id):
             bot.send_message(
                 message.chat.id,
                 f"Привет!\nОтсканируйте QR для работы с книгами",
                 parse_mode='Markdown',
-                reply_markup = remove_keyboard()
+                reply_markup=remove_keyboard()
             )
         else:
             bot.send_message(
                 message.chat.id,
                 f"Ожидайте подтверждения администратора!",
                 parse_mode='Markdown',
-                reply_markup = remove_keyboard()
-                )
+                reply_markup=remove_keyboard()
+            )
     else:
         welcome_text = f"""
 Привет!
@@ -87,8 +93,37 @@ def handle_start(message):
             message.chat.id,
             welcome_text,
             parse_mode='Markdown',
-            reply_markup = remove_keyboard()
+            reply_markup=remove_keyboard()
         )
+
+
+@bot.message_handler(commands=['books'])
+def handle_my_books(message):
+    user_id = message.from_user.id
+
+    # Проверяем регистрацию
+    if not is_user_registered(user_id):
+        bot.reply_to(message, "Сначала зарегистрируйтесь через /start")
+        return
+
+    # Получаем книги пользователя из базы данных
+    books = get_user_books(user_id)
+
+    if not books:
+        bot.reply_to(message, "У вас пока нет книг.")
+        return
+
+    text = "ВАШИ КНИГИ:\n\n"
+
+    for book in books:
+        subject = book[0]  # Название книги
+        issue_date = book[3]  # Дата выдачи
+
+        text += f"{subject}\n"
+        text += f"Взята: {issue_date}\n\n"
+
+    bot.reply_to(message, text, parse_mode='Markdown')
+
 
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
@@ -143,7 +178,7 @@ def handle_inline_buttons(call):
 
     # Обработка выбора роли
     if callback_data.startswith("role_"):
-        role = callback_data.split("_")[1]  # "student" или "teacher"
+        role = callback_data.split("_")[1]
 
         if user_id not in user_data_temp:
             bot.send_message(call.message.chat.id, "Ошибка! Начните регистрацию заново: /start")
@@ -153,39 +188,42 @@ def handle_inline_buttons(call):
         fio = temp_data['fio']
         additional = temp_data['additional']
 
-        # Регистрируем пользователя в зависимости от выбранной роли
         if role == "student":
-            teacher_status[user_id] = True
-            # Для ученика additional = класс
-            if register_user(user_id, fio, additional):
+            # Ученик: статус = "student", permit = True (сразу доступ)
+            if register_user(user_id, fio, additional, "student", True):
                 success_text = f"""
 Регистрация завершена!
 
 Отсканируйте QR для работы с книгами!
-                """
-                teacher_status[user_id] = True
+                    """
+                teacher_status[user_id] = False  # Не учитель
             else:
-                error_text = "Ошибка регистрации! Возможно, вы уже зарегистрированы."
-                bot.send_message(call.message.chat.id, error_text, parse_mode='Markdown')
+                bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
                 return
 
         else:  # teacher
-            # Для учителя additional = предмет
-            # В текущей структуре БД нет поля для предмета, используем классное поле
-            if register_user(user_id, fio, f"Учитель: {additional}"):
-                if teacher_status[user_id]:
+            # Учитель: статус = "teacher", permit = False (ждет подтверждения)
+            if register_user(user_id, fio, f"Учитель: {additional}", "teacher", False):
+                if teacher_status.get(user_id, False):  # Админ
                     success_text = f"""
 Регистрация завершена!
 
 Отсканируйте QR для работы с книгами!
-                """
+                        """
+                    # Обновляем permit в БД для админа
+                    conn = sqlite3.connect('library.db')
+                    cursor = conn.cursor()
+                    cursor.execute('UPDATE users SET permit = ? WHERE tg_id = ?', (True, user_id))
+                    conn.commit()
+                    conn.close()
                 else:
                     success_text = f"""
+Регистрация завершена!
+
 Ожидайте подтверждения администратора!
-                """
+                        """
             else:
-                error_text = "Ошибка регистрации!"
-                bot.send_message(call.message.chat.id, error_text, parse_mode='Markdown')
+                bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
                 return
 
         # Очищаем временные данные
@@ -216,7 +254,7 @@ def handle_inline_buttons(call):
             )
         else:
             error_text = f"""
-Книга уже взята или не найдена.
+Книга уже взята вами или кем-то другим.
             """
             bot.edit_message_text(
                 error_text,
@@ -316,5 +354,4 @@ def handle_all_messages(message):
 # ========== ЗАПУСК БОТА ==========
 
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
-
 
