@@ -12,7 +12,7 @@ user_waiting_for_data = {}  # {user_id: True} - ожидает ввода дан
 user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}}
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
-ADMIN_ID = 1615187103  # временный админ
+ADMIN_ID = 8523221712  # временный админ (tg bleb)
 
 
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
@@ -59,9 +59,7 @@ def create_confirm_keyboard(teacher_id):
 def handle_start(message):
     user_id = message.from_user.id
 
-    # Добавляем пользователя в teacher_status если его нет
-    if user_id not in teacher_status:
-        teacher_status[user_id] = False
+    teacher_status[user_id] = False
 
     if is_user_registered(user_id):
         # Проверяем разрешение из БД
@@ -116,7 +114,7 @@ def handle_my_books(message):
         return
 
     # Получаем книги пользователя из базы данных
-    books = get_user_books(user_id)
+    books = get_user_current_books(user_id)
 
     if not books:
         bot.reply_to(message, "У вас пока нет книг.")
@@ -183,7 +181,21 @@ def handle_registration_data(message):
 def handle_inline_buttons(call):
     user_id = call.from_user.id
     callback_data = call.data
-    bot.answer_callback_query(call.id)
+
+    # ЗАЩИТА ОТ СТАРЫХ CALLBACK
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        print(f"Старый callback: {e}")
+        try:
+            bot.send_message(
+                call.message.chat.id,
+                "Это сообщение устарело. Нажмите /start",
+                reply_markup=remove_keyboard()
+            )
+        except:
+            pass
+        return
 
     # ===== 1. КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ (НОВЫЕ) =====
     if callback_data.startswith("confirm_") or callback_data.startswith("reject_"):
@@ -286,7 +298,6 @@ def handle_inline_buttons(call):
                     f"Предмет: {additional}\n"
                     f"Telegram ID: {user_id}\n"
                     f"Username: @{call.from_user.username or 'нет'}",
-                    parse_mode='Markdown',
                     reply_markup=create_confirm_keyboard(user_id)
                 )
             else:
