@@ -5,7 +5,7 @@ def create_database():  # создаем базу данных и таблицы
     conn = sqlite3.connect('library.db')  # создаем или подключаемся к уже созданному файлу базы данных "library.db"
     cursor = conn.cursor()  # создаем курсор (объект для выполнения sql команд)
 
-    # таблица "users" (id пользователя, Telegram ID, ФИО, класс, статус(учитель/ученик), разрешение)
+    # таблица "users" (id пользователя, Telegram ID, ФИО, класс, статус(учитель/ученик), разрешение на использование)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
          id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +28,7 @@ def create_database():  # создаем базу данных и таблицы
      )
      ''')
 
-    # таблица "records"
+    # таблица "records" (id записи, id пользователя(из users), id книги(из books), дата выдачи, дата сдачи)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +41,7 @@ def create_database():  # создаем базу данных и таблицы
 
     conn.commit()  # сохраняем изменения
     conn.close()  # закрываем базу данных
-    print("База данных создана")
+    print("База данных создана")  # сообщаем о работоспособности системы(пишется при запуске botcode.py)
 
 
 # функция проверки того зарегистрирован ли пользователь с данным Telegram ID
@@ -49,7 +49,7 @@ def is_user_registered(tg_id):
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM users WHERE tg_id = ?', (
-    tg_id,))  # ищем пользователя с таким Telegram ID по всей таблице (? - место для подстановки значения; нужно во избежании уязвимостей)
+    tg_id,))  # ищем пользователя с таким Telegram ID по всей таблице (? - место для подстановки значения; нужно во избежание уязвимостей)
     user = cursor.fetchone()  # получаем результат (если есть пользователь - вернется запись, если нет - None)
     conn.close()  # закрываем базу данных
     return user is not None  # возвращаем True если пользователь найден, False если нет
@@ -74,24 +74,48 @@ def register_user(tg_id, fio, user_class, status, permit=False):
         conn.close()  # закрываем базу данных
 
 
-# функция проверки разрешения пользователя
-def check_user_permit(tg_id):
-    conn = sqlite3.connect('library.db')
+# функция удаления пользователя (например, при отклонении заявки администратором)
+def delete_user(tg_id):  # Удаляет пользователя из базы данных; возвращает True если удаление успешно, False если пользователь не найден
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()
-    cursor.execute('SELECT permit FROM users WHERE tg_id = ?', (tg_id,))
-    result = cursor.fetchone()
-    conn.close()
+    try:  # выполняем SQL-запрос на удаление записи из таблицы users
+        cursor.execute('DELETE FROM users WHERE tg_id = ?', (tg_id,))  # удаляем пользователя с данным Telegram ID (tg_id вставляется вместо ?)
+        conn.commit()  # сохраняем изменения
+        deleted = cursor.rowcount > 0  # количество строк, которые были затронуты запросом
+        # если пользователь найден и удален: rowcount = 1, deleted = True
+        # если пользователь не найден: rowcount = 0, deleted = False
+        return deleted  # возвращаем True или False
+
+    except Exception as e:  # если в try выдало какую-либо ошибку, то выполняем это
+        print(f"Ошибка при удалении пользователя {tg_id}: {e}")
+        return False  # возвращаем False (т.е. пользователь не удален из базы данных)
+
+    finally:  # выполняем вне зависимости от получения ошибки(т.е. в любом случае)
+        conn.close()  # закрываем базу данных
+
+
+# функция проверки разрешения пользователя на пользование ботом
+def check_user_permit(tg_id):
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()
+    cursor.execute('SELECT permit FROM users WHERE tg_id = ?', (tg_id,))  # ищем какой permit у пользователя по его Telegram ID (tg_id вставляется вместо ?)
+    result = cursor.fetchone()  # fetchone() получает первую найденную запись или None, если ничего не найдено (возвращается в виде кортежа (True,) или (False,))
+    conn.close()  # закрываем базу данных
     return result[0] if result else False
+    # если result не None - возвращаем result[0] (permit)
+    # если result is None (пользователь не найден) - возвращаем False
 
 
 # функция получения статуса пользователя
 def get_user_status(tg_id):
-    conn = sqlite3.connect('library.db')
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()
-    cursor.execute('SELECT status FROM users WHERE tg_id = ?', (tg_id,))
-    result = cursor.fetchone()
-    conn.close()
+    cursor.execute('SELECT status FROM users WHERE tg_id = ?', (tg_id,))  # ищем какой status у пользователя по его Telegram ID (tg_id вставляется вместо ?)
+    result = cursor.fetchone()  # fetchone() получает первую найденную запись или None, если ничего не найдено (возвращается в виде кортежа (True,) или (False,) или None)
+    conn.close()  # закрываем базу данных
     return result[0] if result else None
+    # если result не None - возвращаем result[0] (permit)
+    # если result is None (пользователь не найден) - возвращаем False
 
 
 # функция взятия книги
@@ -109,16 +133,16 @@ def take_book(tg_id, qr_code):
         conn.close()  # закрываем базу данных
         return False
 
-    # проверяем, не взята ли эта книга уже кем-то другим
+    # проверяем, не взята ли эта книга уже кем-то другим (просматриваем все записи в таблице records с данным id книги, у которых отсутствует дата возврата(return_date))
     cursor.execute('''
         SELECT * FROM records 
         WHERE book_id = ? AND return_date IS NULL
     ''', (book[0],))  # book[0] - id книги
-    if cursor.fetchone():  # если книга уже кем-то взята - возвращаем False
+    if cursor.fetchone():  # fetchone() получает первую найденную запись или None, если ничего не найдено
         conn.close()  # закрываем базу данных
-        return False
+        return False  # если книга уже кем-то взята - возвращаем False
 
-    # cоздаём новую запись в таблице records о выдаче
+    # cоздаем новую запись в таблице records о выдаче
     cursor.execute('INSERT INTO records (user_id, book_id) VALUES (?, ?)',
                    (user[0], book[0]))  # user[0] - id пользователя, book[0] - id книги
 
