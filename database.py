@@ -261,7 +261,7 @@ def user_has_book(tg_id, qr_code):
 
 
 # функция возвращает все книги, которые брал пользователь
-def get_user_books(tg_id):
+def get_user_books_history(tg_id):
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()
     # ищем все записи о книгах этого пользователя
@@ -276,6 +276,24 @@ def get_user_books(tg_id):
         ''', (tg_id,))
 
 
+    books = cursor.fetchall()  # получаем все найденные записи
+    conn.close()  # закрываем базу данных
+    return books  # возвращаем список книг
+
+# функция возвращает список всех книг, которые у пользователя на руках
+def get_user_current_books(tg_id):
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()
+    # ищем записи о взятии книг этого пользователя
+    # соединяем три таблицы: records, books и users
+    cursor.execute('''                                       
+        SELECT books.subject, books.author, books.year, records.issue_date
+        FROM records
+        JOIN books ON records.book_id = books.id
+        JOIN users ON records.user_id = users.id
+        WHERE users.tg_id = ? AND records.return_date IS NULL
+        ORDER BY records.issue_date DESC
+    ''', (tg_id,))
     books = cursor.fetchall()  # получаем все найденные записи
     conn.close()  # закрываем базу данных
     return books  # возвращаем список книг
