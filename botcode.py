@@ -12,7 +12,7 @@ user_waiting_for_data = {}  # {user_id: True} - ожидает ввода дан
 user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}}
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
-teacher_status[1615187103] = True  # временный админ
+ADMIN_ID = 1615187103  # временный админ
 
 
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
@@ -43,6 +43,15 @@ def remove_keyboard():
     """
     return types.ReplyKeyboardRemove()
 
+def create_confirm_keyboard(teacher_id):
+    """Создает клавиатуру для подтверждения учителя"""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{teacher_id}"),
+        types.InlineKeyboardButton("Отклонить", callback_data=f"reject_{teacher_id}")
+    )
+    return keyboard
+
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
 
@@ -66,7 +75,7 @@ def handle_start(message):
         else:
             bot.send_message(
                 message.chat.id,
-                f"Ожидайте подтверждения администратора!",
+                f"Регистрация завершена\n\nОжидайте подтверждения администратора!",
                 parse_mode='Markdown',
                 reply_markup=remove_keyboard()
             )
@@ -176,7 +185,68 @@ def handle_inline_buttons(call):
     callback_data = call.data
     bot.answer_callback_query(call.id)
 
-    # Обработка выбора роли
+    # ===== 1. КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ (НОВЫЕ) =====
+    if callback_data.startswith("confirm_") or callback_data.startswith("reject_"):
+        admin_id = call.from_user.id
+
+        # Проверяем, что это админ
+        if admin_id != ADMIN_ID:
+            bot.answer_callback_query(call.id, "У вас нет прав администратора!")
+            return
+
+        # Получаем ID учителя из callback_data
+        if callback_data.startswith("confirm_"):
+            teacher_id = int(callback_data.replace("confirm_", ""))
+            permit = True
+            action = "подтверждена"
+
+            # Обновляем статус в БД
+            conn = sqlite3.connect('library.db')
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET permit = ? WHERE tg_id = ?', (permit, teacher_id))
+            conn.commit()
+            conn.close()
+
+            # Уведомляем учителя об одобрении
+            bot.send_message(
+                teacher_id,
+                "Ваша заявка одобрена!\n\n"
+                "Теперь вы можете пользоваться библиотекой.\n"
+                "Отправьте /start для начала работы.",
+                parse_mode='Markdown'
+            )
+        else:
+            teacher_id = int(callback_data.replace("reject_", ""))
+            permit = False
+            action = "отклонена"
+
+            if delete_user(teacher_id):
+                # Уведомляем учителя об отклонении
+                bot.send_message(
+                    teacher_id,
+                    "Ваша заявка отклонена.\n\n"
+                    "Обратитесь к администратору для уточнения причины.\n"
+                    "Вы можете зарегистрироваться снова через /start",
+                    parse_mode='Markdown'
+                )
+            else:
+                bot.send_message(
+                    admin_id,
+                    f"Не удалось удалить пользователя {teacher_id} (возможно, его уже нет в БД)",
+                    parse_mode='Markdown'
+                )
+
+
+        # Сообщение админу
+        bot.edit_message_text(
+            f"Заявка {action}!",
+            call.message.chat.id,
+            call.message.message_id
+        )
+        bot.answer_callback_query(call.id)
+        return
+
+    # ===== 2. ВЫБОР РОЛИ (УЧЕНИК/УЧИТЕЛЬ) =====
     if callback_data.startswith("role_"):
         role = callback_data.split("_")[1]
 
@@ -189,44 +259,40 @@ def handle_inline_buttons(call):
         additional = temp_data['additional']
 
         if role == "student":
-            # Ученик: статус = "student", permit = True (сразу доступ)
             if register_user(user_id, fio, additional, "student", True):
                 success_text = f"""
 Регистрация завершена!
 
 Отсканируйте QR для работы с книгами!
-                    """
-                teacher_status[user_id] = False  # Не учитель
+                """
+                teacher_status[user_id] = False
             else:
                 bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
                 return
-
         else:  # teacher
-            # Учитель: статус = "teacher", permit = False (ждет подтверждения)
             if register_user(user_id, fio, f"Учитель: {additional}", "teacher", False):
-                if teacher_status.get(user_id, False):  # Админ
-                    success_text = f"""
-Регистрация завершена!
+                success_text = f"""
+Заявка отправлена!
 
-Отсканируйте QR для работы с книгами!
-                        """
-                    # Обновляем permit в БД для админа
-                    conn = sqlite3.connect('library.db')
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE users SET permit = ? WHERE tg_id = ?', (True, user_id))
-                    conn.commit()
-                    conn.close()
-                else:
-                    success_text = f"""
-Регистрация завершена!
+Ваша регистрация ожидает подтверждения администратора.
+Мы уведомим вас, когда заявка будет одобрена.
+                """
 
-Ожидайте подтверждения администратора!
-                        """
+                # Отправляем уведомление админу
+                bot.send_message(
+                    ADMIN_ID,
+                    f"Новая заявка на регистрацию учителя!\n\n"
+                    f"ФИО: {fio}\n"
+                    f"Предмет: {additional}\n"
+                    f"Telegram ID: {user_id}\n"
+                    f"Username: @{call.from_user.username or 'нет'}",
+                    parse_mode='Markdown',
+                    reply_markup=create_confirm_keyboard(user_id)
+                )
             else:
                 bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
                 return
 
-        # Очищаем временные данные
         if user_id in user_data_temp:
             del user_data_temp[user_id]
 
@@ -238,7 +304,7 @@ def handle_inline_buttons(call):
         )
         return
 
-    # Обработка взятия книги
+    # ===== 3. ВЗЯТИЕ КНИГИ =====
     if callback_data.startswith("take_"):
         qr_code = callback_data.replace("take_", "")
 
@@ -267,7 +333,7 @@ def handle_inline_buttons(call):
             del user_pending_action[user_id]
         return
 
-    # Обработка возврата книги
+    # ===== 4. ВОЗВРАТ КНИГИ =====
     if callback_data.startswith("return_"):
         qr_code = callback_data.replace("return_", "")
 
