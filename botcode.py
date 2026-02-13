@@ -59,17 +59,39 @@ def create_confirm_keyboard(teacher_id):
 def handle_start(message):
     user_id = message.from_user.id
 
+    # ПОЛУЧАЕМ QR-КОД ИЗ КОМАНДЫ (если есть)
+    qr_code = None
+    if len(message.text.split()) > 1:
+        # Если пришли с QR: /start TEST-001
+        qr_code = message.text.split()[1]
+
     teacher_status[user_id] = False
 
     if is_user_registered(user_id):
         # Проверяем разрешение из БД
         if check_user_permit(user_id):
-            bot.send_message(
-                message.chat.id,
-                f"Привет!\nОтсканируйте QR для работы с книгами",
-                parse_mode='Markdown',
-                reply_markup=remove_keyboard()
-            )
+            # ЕСЛИ ЕСТЬ QR-КОД - СРАЗУ ОБРАБАТЫВАЕМ
+            if qr_code:
+                fake_msg = types.Message(
+                    message_id=0,
+                    from_user=message.from_user,
+                    date=message.date,
+                    chat=message.chat,
+                    content_type='text',
+                    options=[],
+                    json_string=''
+                )
+                fake_msg.text = qr_code
+                handle_all_messages(fake_msg)
+            else:
+                # ЕСЛИ НЕТ QR - ПОКАЗЫВАЕМ ПРИВЕТСТВИЕ
+                bot.send_message(
+                    message.chat.id,
+                    f"Привет!\nОтсканируйте QR для работы с книгами",
+                    parse_mode='Markdown',
+                    reply_markup=remove_keyboard()
+                )
+
         else:
             bot.send_message(
                 message.chat.id,
