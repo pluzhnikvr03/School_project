@@ -20,6 +20,8 @@ def generate_qr_code(qr_data,
 # функция, которая извлекает QR-код из разного формата данных о книге и генерирует QR-код (удобно, если данные о книгах в разных форматах)
 def generate_qr_for_book(book_info,
                          folder="qrcodes"):  # book_info - информация о книге в любом формате; folder - папка для сохранения QR-кода
+    BOT_USERNAME = "library192_bot"  # имя бота через username
+
     if isinstance(book_info, dict):  # если передан словарь
         qr_data = book_info.get('qr_code', book_info.get('id', 'unknown'))
     elif isinstance(book_info, (list, tuple)):  # если передан список или кортеж
@@ -27,8 +29,19 @@ def generate_qr_for_book(book_info,
     else:  # если передана просто строка или число
         qr_data = str(book_info)  # преобразуем в строку
 
-    return generate_qr_code(qr_data, folder)  # вызываем основную функцию генерации QR-кода с извлеченными данными
+    link = f"https://t.me/library192_bot?start={qr_data}" # формируем ссылку на бота с кодом книги (qr_data — код книги)
 
+    # проверяем, есть ли папка qrcodes/. если нет — создаём её.
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    # Генерируем QR-код из ссылки
+    qr = qrcode.make(link)  # берём ссылку и превращаем её в QR-код.
+    filename = f"{qr_data}.png"  # создаём имя файла типа TEST-001.png
+    filepath = os.path.join(folder, filename)  # сохраняем путь к файлу (cклеиваем папку и имя файла: qrcodes/TEST-001.png)
+    qr.save(filepath)  # сохраняем картинку
+
+    return filepath  # возвращаем путь к файлу
 
 # функция генерирует QR-коды для списка книг
 def generate_all_qr_codes(books_list,
