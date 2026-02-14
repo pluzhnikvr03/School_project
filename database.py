@@ -185,6 +185,24 @@ def return_book(tg_id, qr_code):
     conn.close()  # закрываем соединение
     return True  # возвращаем True - книга успешно возвращена
 
+# функция возврата информации о владельце книги
+def get_book_owner_info(qr_code):  # qr_code - код книги, которую нужно проверить
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()
+    # выполняем SQL-запрос к базе данных, соединяя три таблицы(users, books, records)
+    # ищем учебник с конкретным qr-кодом и те записи о нем, в которых return_date IS NULL
+    cursor.execute('''
+        SELECT users.FIO, users.class, users.tg_id, records.issue_date
+        FROM records
+        JOIN users ON records.user_id = users.id
+        JOIN books ON records.book_id = books.id
+        WHERE books.qr_code = ? AND records.return_date IS NULL
+    ''', (qr_code,))
+
+    owner = cursor.fetchone()  # fetchone() получает первую найденную запись (FIO, class, tg_id, issue_date или None)
+    conn.close()  # закрываем соединение в базой данных
+    return owner  # возвращаем результат: кортеж с данными владельца или None
+
 
 # функция возврата информации о книге по ее QR-коду
 def get_book_info(qr_code):
