@@ -32,7 +32,8 @@ def create_book_action_keyboard(qr_code):
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("Взять", callback_data=f"take_{qr_code}"),
-        types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}")
+        types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}"),
+        types.InlineKeyboardButton("Кому принадлежит?", callback_data=f"who_{qr_code}")
     )
     return keyboard
 
@@ -394,6 +395,82 @@ def handle_inline_buttons(call):
 
         if user_id in user_pending_action:
             del user_pending_action[user_id]
+        return
+
+    # ===== 5. КНОПКА "КОМУ ПРИНАДЛЕЖИТ?" =====
+    if callback_data.startswith("who_"):
+        qr_code = callback_data.replace("who_", "")
+
+        # Получаем информацию о владельце книги
+        owner = get_book_owner_info(qr_code)
+        user_status = get_user_status(user_id)  # 'student' или 'teacher'
+
+        # Книга свободна
+        if not owner:
+            # Для УЧИТЕЛЯ — полная информация
+            if user_status == 'teacher':
+                info_text = f"""
+Информация o книге:
+
+Книга свободна!
+                            """
+
+            # Для УЧЕНИКА
+            else:  # student
+                info_text = f"""
+Эта не твоя книга!
+Отнеси ее учителю.
+                                """
+
+        else:
+            fio, class_name, owner_tg_id, issue_date = owner
+
+            # Для УЧИТЕЛЯ — полная информация
+            if user_status == 'teacher':
+                if owner_tg_id == user_id:
+                    # Это ЕГО книга
+                    info_text = f"""
+Это ваш учебник!
+
+Взят: {issue_date}
+Не забудьте вернуть вовремя!
+                                    """
+                else:
+                    info_text = f"""
+Информация o книге:
+
+Книга принадлежит:
+ФИО: {fio}
+Класс: {class_name}
+Взята: {issue_date}
+                    """
+
+            # Для УЧЕНИКА
+            else:  # student
+                if owner_tg_id == user_id:
+                    # Это ЕГО книга
+                    info_text = f"""
+Это ваш учебник!
+
+Взят: {issue_date}
+Не забудьте вернуть вовремя!
+                    """
+                else:
+                    # Чужая книга
+                    info_text = f"""
+Эта не твоя книга!
+Отнеси ее учителю.
+                    """
+
+        # Показываем информацию
+        bot.edit_message_text(
+            info_text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+
+        bot.answer_callback_query(call.id)
         return
 
 
