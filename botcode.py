@@ -12,6 +12,9 @@ user_waiting_for_data = {}  # {user_id: True} - ожидает ввода дан
 user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}}
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
+# Состояния для учителя
+teacher_acting_for = {}  # {teacher_id: student_tg_id} - учитель действует за ученика
+teacher_temp_data = {}   # {teacher_id: {'step': 'waiting_class', ...}} - временные данные
 ADMIN_ID = 8523221712  # временный админ (tg bleb)
 
 
@@ -155,6 +158,91 @@ def handle_my_books(message):
     bot.reply_to(message, text, parse_mode='Markdown')
 
 
+@bot.message_handler(commands=['help'])
+def handle_act_start(message):
+    user_id = message.from_user.id
+
+    # Проверяем, что это учитель
+    if get_user_status(user_id) != 'teacher':
+        bot.reply_to(message, "Эта команда только для учителей!")
+        return
+
+    # Получаем список всех классов
+    conn = sqlite3.connect('library.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT class FROM users WHERE class NOT LIKE "Учитель:%" ORDER BY class')
+    classes = cursor.fetchall()
+    conn.close()
+
+    if not classes:
+        bot.reply_to(message, "В системе пока нет учеников")
+        return
+
+    # Создаём клавиатуру с классами
+    keyboard = types.InlineKeyboardMarkup(row_width=3)
+    buttons = []
+    for class_name in classes:
+        buttons.append(types.InlineKeyboardButton(
+            class_name[0],
+            callback_data=f"help_class_{class_name[0]}"
+        ))
+    keyboard.add(*buttons)
+    keyboard.add(types.InlineKeyboardButton("Отмена", callback_data="help_cancel"))
+
+    teacher_temp_data[user_id] = {'step': 'waiting_class'}
+
+    bot.reply_to(
+        message,
+        "Выберите класс ученика:",
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
+
+
+@bot.message_handler(commands=['status'])
+def handle_act_status(message):
+    user_id = message.from_user.id
+
+    if user_id in teacher_acting_for:
+        student_id = teacher_acting_for[user_id]
+
+        conn = sqlite3.connect('library.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT FIO, class FROM users WHERE tg_id = ?', (student_id,))
+        fio, class_name = cursor.fetchone()
+        conn.close()
+
+        bot.reply_to(
+            message,
+            f"Вы действуете за ученика:\n{fio}\n{class_name}",
+            parse_mode='Markdown'
+        )
+    else:
+        bot.reply_to(message, "Вы действуете от своего имени")
+
+
+@bot.message_handler(commands=['stop_help'])
+def handle_stop_help(message):
+    user_id = message.from_user.id
+
+    if user_id in teacher_acting_for:
+        student_id = teacher_acting_for[user_id]
+
+        conn = sqlite3.connect('library.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (student_id,))
+        fio = cursor.fetchone()[0]
+        conn.close()
+
+        del teacher_acting_for[user_id]
+        bot.reply_to(
+            message,
+            f"Вы вышли из режима помощи для ученика {fio}",
+            parse_mode='Markdown'
+        )
+    else:
+        bot.reply_to(message, "Вы и так не в режиме помощи")
+
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
 
@@ -169,7 +257,7 @@ def handle_registration_data(message):
         error_text = """
 Недостаточно данных!
 
-Введите: Фамилия Имя Отчество Класс* или *Фамилия Имя Отчество Предмет
+Введите: Фамилия Имя Отчество Класс или Фамилия Имя Отчество Предмет
 
 Примеры:
 Иванов Иван Иванович 10А
@@ -220,7 +308,118 @@ def handle_inline_buttons(call):
             pass
         return
 
-    # ===== 1. КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ (НОВЫЕ) =====
+    # ===== ОБРАБОТЧИКИ ДЛЯ /help =====
+    if callback_data.startswith("help_class_"):
+        class_name = callback_data.replace("help_class_", "")
+
+        conn = sqlite3.connect('library.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+                SELECT tg_id, FIO FROM users 
+                WHERE class = ? AND status = 'student'
+                ORDER BY FIO
+            ''', (class_name,))
+        students = cursor.fetchall()
+        conn.close()
+
+        if not students:
+            bot.answer_callback_query(call.id, "В этом классе нет учеников")
+            return
+
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        for tg_id, fio in students:
+            short_name = ' '.join(fio.split()[:2])
+            keyboard.add(types.InlineKeyboardButton(
+                f"{short_name}",
+                callback_data=f"help_student_{tg_id}"
+            ))
+
+        keyboard.add(types.InlineKeyboardButton("Назад к классам", callback_data="help_back_to_classes"))
+        keyboard.add(types.InlineKeyboardButton("Отмена", callback_data="help_cancel"))
+
+        teacher_temp_data[user_id] = {'step': 'waiting_student', 'class': class_name}
+
+        bot.edit_message_text(
+            f"Класс {class_name}\n\nВыберите ученика:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        return
+
+    if callback_data.startswith("help_student_"):
+        student_id = int(callback_data.replace("help_student_", ""))
+
+        conn = sqlite3.connect('library.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT FIO, class FROM users WHERE tg_id = ?', (student_id,))
+        fio, class_name = cursor.fetchone()
+        conn.close()
+
+        teacher_acting_for[user_id] = student_id
+
+        if user_id in teacher_temp_data:
+            del teacher_temp_data[user_id]
+
+        success_text = f"""
+Режим помощи ученику активирован!
+Ученик: {fio}
+Класс: {class_name}
+
+Теперь все операции с книгами будут выполняться для этого ученика.
+
+Команды:
+• /stop_help — вернуться в обычный режим
+• /status — посмотреть текущего ученика
+        """
+
+        bot.edit_message_text(
+            success_text,
+            call.message.chat.id,
+            call.message.message_id
+        )
+        return
+
+    if callback_data == "help_back_to_classes":
+        conn = sqlite3.connect('library.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT class FROM users WHERE class NOT LIKE "Учитель:%" ORDER BY class')
+        classes = cursor.fetchall()
+        conn.close()
+
+        keyboard = types.InlineKeyboardMarkup(row_width=3)
+        buttons = []
+        for class_name in classes:
+            buttons.append(types.InlineKeyboardButton(
+                class_name[0],
+                callback_data=f"help_class_{class_name[0]}"
+            ))
+        keyboard.add(*buttons)
+        keyboard.add(types.InlineKeyboardButton("Отмена", callback_data="help_cancel"))
+
+        bot.edit_message_text(
+            "Выберите класс ученика:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        return
+
+    if callback_data == "help_cancel":
+        if user_id in teacher_temp_data:
+            del teacher_temp_data[user_id]
+
+        bot.edit_message_text(
+            "Действие отменено.",
+            call.message.chat.id,
+            call.message.message_id
+        )
+        return
+
+
+    # ===== КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ (НОВЫЕ) =====
     if callback_data.startswith("confirm_") or callback_data.startswith("reject_"):
         admin_id = call.from_user.id
 
@@ -281,7 +480,7 @@ def handle_inline_buttons(call):
         bot.answer_callback_query(call.id)
         return
 
-    # ===== 2. ВЫБОР РОЛИ (УЧЕНИК/УЧИТЕЛЬ) =====
+    # ===== ВЫБОР РОЛИ (УЧЕНИК/УЧИТЕЛЬ) =====
     if callback_data.startswith("role_"):
         role = callback_data.split("_")[1]
 
@@ -338,11 +537,13 @@ def handle_inline_buttons(call):
         )
         return
 
-    # ===== 3. ВЗЯТИЕ КНИГИ =====
+    # ===== ВЗЯТИЕ КНИГИ =====
     if callback_data.startswith("take_"):
         qr_code = callback_data.replace("take_", "")
 
-        if take_book(user_id, qr_code):
+        acting_user_id = teacher_acting_for.get(user_id, user_id)
+
+        if take_book(acting_user_id, qr_code):
             success_text = f"""
 Книга взята!
             """
@@ -371,7 +572,9 @@ def handle_inline_buttons(call):
     if callback_data.startswith("return_"):
         qr_code = callback_data.replace("return_", "")
 
-        if return_book(user_id, qr_code):
+        acting_user_id = teacher_acting_for.get(user_id, user_id)
+
+        if return_book(acting_user_id, qr_code):
             success_text = f"""
 Книга возвращена!
             """
@@ -530,4 +733,3 @@ def handle_all_messages(message):
 # ========== ЗАПУСК БОТА ==========
 
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
-
