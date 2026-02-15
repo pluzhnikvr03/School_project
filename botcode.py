@@ -1,20 +1,19 @@
 import telebot
 from telebot import types
 import config  # берем токен из config.py
-from database import *
+from database import *  # импортируем все функции из database.py
 
-create_database()
+create_database() # создаем базу данных при запуске (таблицы создадутся, если их нет)
 
 bot = telebot.TeleBot(config.token)
 
 # СОСТОЯНИЯ для управления диалогом
-user_waiting_for_data = {}  # {user_id: True} - ожидает ввода данных
-user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}}
+user_waiting_for_data = {}  # {user_id: True} - ожидает ввода данных для регистрации
+user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}} - временное хранение введенных ФИО и класса/предмета
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
-teacher_status = {}  # {user_id: True/False} - True для учителей, False для учеников
 # Состояния для учителя
 teacher_acting_for = {}  # {teacher_id: student_tg_id} - учитель действует за ученика
-teacher_temp_data = {}   # {teacher_id: {'step': 'waiting_class', ...}} - временные данные
+teacher_temp_data = {}   # {teacher_id: {'step': 'waiting_class', ...}} - временные данные для выбора ученика
 ADMIN_ID = 8523221712  # временный админ (tg bleb)
 
 
@@ -40,13 +39,6 @@ def create_book_action_keyboard(qr_code):
     )
     return keyboard
 
-
-def remove_keyboard():
-    """
-    Создает "пустую" клавиатуру, которая убирает все кнопки
-    """
-    return types.ReplyKeyboardRemove()
-
 def create_confirm_keyboard(teacher_id):
     """Создает клавиатуру для подтверждения учителя"""
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -69,8 +61,6 @@ def handle_start(message):
         # Если пришли с QR: /start TEST-001
         qr_code = message.text.split()[1]
 
-    teacher_status[user_id] = False
-
     if is_user_registered(user_id):
         # Проверяем разрешение из БД
         if check_user_permit(user_id):
@@ -91,17 +81,13 @@ def handle_start(message):
                 # ЕСЛИ НЕТ QR - ПОКАЗЫВАЕМ ПРИВЕТСТВИЕ
                 bot.send_message(
                     message.chat.id,
-                    f"Привет!\nОтсканируйте QR для работы с книгами",
-                    parse_mode='Markdown',
-                    reply_markup=remove_keyboard()
+                    f"Привет!\nОтсканируйте QR для работы с книгами"
                 )
 
         else:
             bot.send_message(
                 message.chat.id,
-                f"Регистрация завершена\n\nОжидайте подтверждения администратора!",
-                parse_mode='Markdown',
-                reply_markup=remove_keyboard()
+                f"Регистрация завершена\n\nОжидайте подтверждения администратора!"
             )
     else:
         welcome_text = f"""
@@ -124,9 +110,7 @@ def handle_start(message):
         user_waiting_for_data[user_id] = True
         bot.send_message(
             message.chat.id,
-            welcome_text,
-            parse_mode='Markdown',
-            reply_markup=remove_keyboard()
+            welcome_text
         )
 
 
@@ -155,11 +139,12 @@ def handle_my_books(message):
         text += f"{subject}\n"
         text += f"Взята: {issue_date}\n\n"
 
-    bot.reply_to(message, text, parse_mode='Markdown')
+    bot.reply_to(message, text)
 
 
 @bot.message_handler(commands=['help'])
 def handle_act_start(message):
+    """Команда для учителя - начать помощь ученику"""
     user_id = message.from_user.id
 
     # Проверяем, что это учитель
@@ -194,13 +179,13 @@ def handle_act_start(message):
     bot.reply_to(
         message,
         "Выберите класс ученика:",
-        parse_mode='Markdown',
         reply_markup=keyboard
     )
 
 
 @bot.message_handler(commands=['status'])
 def handle_act_status(message):
+    """Показывает, за кого сейчас действует учитель"""
     user_id = message.from_user.id
 
     if user_id in teacher_acting_for:
@@ -214,8 +199,7 @@ def handle_act_status(message):
 
         bot.reply_to(
             message,
-            f"Вы действуете за ученика:\n{fio}\n{class_name}",
-            parse_mode='Markdown'
+            f"Вы действуете за ученика:\n{fio}\n{class_name}"
         )
     else:
         bot.reply_to(message, "Вы действуете от своего имени")
@@ -223,6 +207,7 @@ def handle_act_status(message):
 
 @bot.message_handler(commands=['stop_help'])
 def handle_stop_help(message):
+    """Выход из режима помощи"""
     user_id = message.from_user.id
 
     if user_id in teacher_acting_for:
@@ -237,8 +222,7 @@ def handle_stop_help(message):
         del teacher_acting_for[user_id]
         bot.reply_to(
             message,
-            f"Вы вышли из режима помощи для ученика {fio}",
-            parse_mode='Markdown'
+            f"Вы вышли из режима помощи для ученика {fio}"
         )
     else:
         bot.reply_to(message, "Вы и так не в режиме помощи")
@@ -251,8 +235,7 @@ def handle_registration_data(message):
     user_id = message.from_user.id
     text = message.text.strip()
     parts = text.split()
-    if user_id not in teacher_status:
-        teacher_status[user_id] = False
+
     if len(parts) < 4:
         error_text = """
 Недостаточно данных!
@@ -265,7 +248,7 @@ def handle_registration_data(message):
 
 Попробуйте еще раз:
         """
-        bot.send_message(message.chat.id, error_text, parse_mode='Markdown')
+        bot.send_message(message.chat.id, error_text)
         return
 
     fio = ' '.join(parts[:3])
@@ -301,8 +284,7 @@ def handle_inline_buttons(call):
         try:
             bot.send_message(
                 call.message.chat.id,
-                "Это сообщение устарело. Нажмите /start",
-                reply_markup=remove_keyboard()
+                "Это сообщение устарело. Нажмите /start"
             )
         except:
             pass
@@ -310,8 +292,10 @@ def handle_inline_buttons(call):
 
     # ===== ОБРАБОТЧИКИ ДЛЯ /help =====
     if callback_data.startswith("help_class_"):
+        # Учитель выбрал класс
         class_name = callback_data.replace("help_class_", "")
 
+        # Получаем учеников этого класса
         conn = sqlite3.connect('library.db')
         cursor = conn.cursor()
         cursor.execute('''
@@ -326,6 +310,7 @@ def handle_inline_buttons(call):
             bot.answer_callback_query(call.id, "В этом классе нет учеников")
             return
 
+        # Создаем клавиатуру с учениками
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         for tg_id, fio in students:
             short_name = ' '.join(fio.split()[:2])
@@ -343,12 +328,12 @@ def handle_inline_buttons(call):
             f"Класс {class_name}\n\nВыберите ученика:",
             call.message.chat.id,
             call.message.message_id,
-            parse_mode='Markdown',
             reply_markup=keyboard
         )
         return
 
     if callback_data.startswith("help_student_"):
+        # Учитель выбрал ученика
         student_id = int(callback_data.replace("help_student_", ""))
 
         conn = sqlite3.connect('library.db')
@@ -357,6 +342,7 @@ def handle_inline_buttons(call):
         fio, class_name = cursor.fetchone()
         conn.close()
 
+        # Запоминаем, за кого действует учитель
         teacher_acting_for[user_id] = student_id
 
         if user_id in teacher_temp_data:
@@ -370,8 +356,8 @@ def handle_inline_buttons(call):
 Теперь все операции с книгами будут выполняться для этого ученика.
 
 Команды:
-• /stop_help — вернуться в обычный режим
-• /status — посмотреть текущего ученика
+/stop_help — вернуться в обычный режим
+/status — посмотреть текущего ученика
         """
 
         bot.edit_message_text(
@@ -382,6 +368,7 @@ def handle_inline_buttons(call):
         return
 
     if callback_data == "help_back_to_classes":
+        # Возврат к выбору классов
         conn = sqlite3.connect('library.db')
         cursor = conn.cursor()
         cursor.execute('SELECT DISTINCT class FROM users WHERE class NOT LIKE "Учитель:%" ORDER BY class')
@@ -402,12 +389,12 @@ def handle_inline_buttons(call):
             "Выберите класс ученика:",
             call.message.chat.id,
             call.message.message_id,
-            parse_mode='Markdown',
             reply_markup=keyboard
         )
         return
 
     if callback_data == "help_cancel":
+        # Отмена действия
         if user_id in teacher_temp_data:
             del teacher_temp_data[user_id]
 
@@ -419,7 +406,7 @@ def handle_inline_buttons(call):
         return
 
 
-    # ===== КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ (НОВЫЕ) =====
+    # ===== КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ =====
     if callback_data.startswith("confirm_") or callback_data.startswith("reject_"):
         admin_id = call.from_user.id
 
@@ -446,8 +433,7 @@ def handle_inline_buttons(call):
                 teacher_id,
                 "Ваша заявка одобрена!\n\n"
                 "Теперь вы можете пользоваться библиотекой.\n"
-                "Отправьте /start для начала работы.",
-                parse_mode='Markdown'
+                "Отправьте /start для начала работы."
             )
         else:
             teacher_id = int(callback_data.replace("reject_", ""))
@@ -460,14 +446,12 @@ def handle_inline_buttons(call):
                     teacher_id,
                     "Ваша заявка отклонена.\n\n"
                     "Обратитесь к администратору для уточнения причины.\n"
-                    "Вы можете зарегистрироваться снова через /start",
-                    parse_mode='Markdown'
+                    "Вы можете зарегистрироваться снова через /start"
                 )
             else:
                 bot.send_message(
                     admin_id,
-                    f"Не удалось удалить пользователя {teacher_id} (возможно, его уже нет в БД)",
-                    parse_mode='Markdown'
+                    f"Не удалось удалить пользователя {teacher_id} (возможно, его уже нет в БД)"
                 )
 
 
@@ -499,9 +483,8 @@ def handle_inline_buttons(call):
 
 Отсканируйте QR для работы с книгами!
                 """
-                teacher_status[user_id] = False
             else:
-                bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
+                bot.send_message(call.message.chat.id, "Ошибка регистрации!")
                 return
         else:  # teacher
             if register_user(user_id, fio, f"Учитель: {additional}", "teacher", False):
@@ -523,7 +506,7 @@ def handle_inline_buttons(call):
                     reply_markup=create_confirm_keyboard(user_id)
                 )
             else:
-                bot.send_message(call.message.chat.id, "Ошибка регистрации!", parse_mode='Markdown')
+                bot.send_message(call.message.chat.id, "Ошибка регистрации!")
                 return
 
         if user_id in user_data_temp:
@@ -532,8 +515,7 @@ def handle_inline_buttons(call):
         bot.edit_message_text(
             success_text,
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode='Markdown'
+            call.message.message_id
         )
         return
 
@@ -541,6 +523,7 @@ def handle_inline_buttons(call):
     if callback_data.startswith("take_"):
         qr_code = callback_data.replace("take_", "")
 
+        # Определяем, от чьего имени брать книгу (учитель или ученик)
         acting_user_id = teacher_acting_for.get(user_id, user_id)
 
         if take_book(acting_user_id, qr_code):
@@ -550,8 +533,7 @@ def handle_inline_buttons(call):
             bot.edit_message_text(
                 success_text,
                 call.message.chat.id,
-                call.message.message_id,
-                parse_mode='Markdown'
+                call.message.message_id
             )
         else:
             error_text = f"""
@@ -560,8 +542,7 @@ def handle_inline_buttons(call):
             bot.edit_message_text(
                 error_text,
                 call.message.chat.id,
-                call.message.message_id,
-                parse_mode='Markdown'
+                call.message.message_id
             )
 
         if user_id in user_pending_action:
@@ -581,8 +562,7 @@ def handle_inline_buttons(call):
             bot.edit_message_text(
                 success_text,
                 call.message.chat.id,
-                call.message.message_id,
-                parse_mode='Markdown'
+                call.message.message_id
             )
         else:
             error_text = f"""
@@ -592,8 +572,7 @@ def handle_inline_buttons(call):
             bot.edit_message_text(
                 error_text,
                 call.message.chat.id,
-                call.message.message_id,
-                parse_mode='Markdown'
+                call.message.message_id
             )
 
         if user_id in user_pending_action:
@@ -618,12 +597,11 @@ def handle_inline_buttons(call):
 Книга свободна!
                             """
 
-            # Для УЧЕНИКА
             else:  # student
                 info_text = f"""
 Эта не твоя книга!
 Отнеси ее учителю.
-                                """
+                            """
 
         else:
             fio, class_name, owner_tg_id, issue_date = owner
@@ -648,7 +626,6 @@ def handle_inline_buttons(call):
 Взята: {issue_date}
                     """
 
-            # Для УЧЕНИКА
             else:  # student
                 if owner_tg_id == user_id:
                     # Это ЕГО книга
@@ -669,8 +646,7 @@ def handle_inline_buttons(call):
         bot.edit_message_text(
             info_text,
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode='Markdown'
+            call.message.message_id
         )
 
         bot.answer_callback_query(call.id)
@@ -689,13 +665,6 @@ def handle_all_messages(message):
             bot.send_message(message.chat.id, "Для начала работы используйте команду /start")
         return
 
-    # Проверяем статус учителя
-    if not teacher_status.get(user_id, False):
-        # Проверяем, не ученик ли это (ученики всегда имеют доступ)
-        # В текущей реализации все зарегистрированные пользователи имеют доступ
-        # Можно добавить логику проверки: если в поле class есть "Учитель:", то проверяем teacher_status
-        pass
-
     # Если сообщение похоже на QR-код (не команда, не пустое)
     text = message.text.strip()
     if text and not text.startswith('/'):
@@ -706,7 +675,7 @@ def handle_all_messages(message):
         book_info = get_book_info(text)
 
         if not book_info:
-            bot.reply_to(message, f"Книга не найдена.", parse_mode='Markdown')
+            bot.reply_to(message, f"Книга не найдена.")
             if user_id in user_pending_action:
                 del user_pending_action[user_id]
             return
@@ -714,7 +683,7 @@ def handle_all_messages(message):
         book_text = f"""
 ИНФОРМАЦИЯ О КНИГЕ
 
-Код: `{book_info['qr_code']}`
+Код: {book_info['qr_code']}
 Название: {book_info['subject']}
 Автор: {book_info['author']}
 Год: {book_info['year']}
@@ -725,7 +694,6 @@ def handle_all_messages(message):
         bot.reply_to(
             message,
             book_text,
-            parse_mode='Markdown',
             reply_markup=create_book_action_keyboard(text)
         )
 
