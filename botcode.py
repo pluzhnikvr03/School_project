@@ -21,8 +21,8 @@ ADMIN_ID = 8523221712  # временный админ (tg bleb)
 
 def create_role_keyboard():
     """Создает клавиатуру для выбора роли"""
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.row(
+    keyboard = types.InlineKeyboardMarkup() # создаем пустую inline-клавиатуру
+    keyboard.row( # добавляем ряд с двумя кнопками
         types.InlineKeyboardButton("Ученик", callback_data="role_student"),
         types.InlineKeyboardButton("Учитель", callback_data="role_teacher")
     )
@@ -31,20 +31,20 @@ def create_role_keyboard():
 
 def create_book_action_keyboard(qr_code):
     """Создает клавиатуру с выбором действия для книги"""
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        types.InlineKeyboardButton("Взять", callback_data=f"take_{qr_code}"),
-        types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}"),
-        types.InlineKeyboardButton("Кому принадлежит?", callback_data=f"who_{qr_code}")
+    keyboard = types.InlineKeyboardMarkup(row_width=2) # создаем клавиатуру с шириной ряда в 2 кнопки
+    keyboard.add( # добавляем три кнопки
+        types.InlineKeyboardButton("Взять", callback_data=f"take_{qr_code}"), # при нажатии вернется "take_QR-код"
+        types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}"), # при нажатии вернется "return_QR-код"
+        types.InlineKeyboardButton("Кому принадлежит?", callback_data=f"who_{qr_code}") # при нажатии вернется "who_QR-код"
     )
     return keyboard
 
 def create_confirm_keyboard(teacher_id):
     """Создает клавиатуру для подтверждения учителя"""
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard = types.InlineKeyboardMarkup(row_width=2) # создаем клавиатуру с двумя кнопками в ряду
     keyboard.add(
-        types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{teacher_id}"),
-        types.InlineKeyboardButton("Отклонить", callback_data=f"reject_{teacher_id}")
+        types.InlineKeyboardButton("Подтвердить", callback_data=f"confirm_{teacher_id}"), # при нажатии вернется "confirm_IDучителя"
+        types.InlineKeyboardButton("Отклонить", callback_data=f"reject_{teacher_id}") # при нажатии вернется "reject_IDучителя"
     )
     return keyboard
 
@@ -57,23 +57,29 @@ def handle_start(message):
 
     # ПОЛУЧАЕМ QR-КОД ИЗ КОМАНДЫ (если есть)
     qr_code = None # инициализируем переменную для QR-кода
-    if len(message.text.split()) > 1:
+    # message.text.split() разбивает текст сообщения на слова по пробелам
+    # Например: "/start TEST-001" -> ["/start", "TEST-001"]
+    if len(message.text.split()) > 1:  # если в сообщении есть пробел (значит есть параметр)
         # Если пришли с QR: /start TEST-001
         qr_code = message.text.split()[1]
-
+        
     if is_user_registered(user_id): # проверяем, есть ли пользователь в базе данных
         # Проверяем разрешение из БД
         if check_user_permit(user_id): # проверяем, имеет ли пользователь доступ (permit = True)
             # ЕСЛИ ЕСТЬ QR-КОД - СРАЗУ ОБРАБАТЫВАЕМ
             if qr_code: # если QR-код был передан
+
+                # Создаем искусственное (фейковое) сообщение, чтобы передать QR-код в обработчик handle_all_messages
+                # Это нужно, чтобы при сканировании QR не отправлять код отдельно, а обработать сразу
+                
                 fake_msg = types.Message( # создаем искусственное сообщение
-                    message_id=0,
-                    from_user=message.from_user,
-                    date=message.date,
-                    chat=message.chat,
-                    content_type='text',
-                    options=[],
-                    json_string=''
+                    message_id=0, # ID сообщения = 0 (неважно, это искусственный объект)
+                    from_user=message.from_user, # копируем отправителя из оригинального сообщения
+                    date=message.date, # копируем дату отправки
+                    chat=message.chat, # копируем информацию о чате
+                    content_type='text', # тип содержимого - текст
+                    options=[], # пустые опции (обязательный параметр)
+                    json_string='' # пустая JSON-строка (обязательный параметр)
                 )
                 fake_msg.text = qr_code # записываем в текст сообщения наш QR-код
                 handle_all_messages(fake_msg) # передаем это искусственное сообщение в обработчик всех сообщений
@@ -705,4 +711,5 @@ def handle_all_messages(message):
 bot.infinity_polling(timeout=60, long_polling_timeout=60) # запускаем бота в режиме бесконечного опроса
 # timeout=60 - таймаут на запрос к Telegram
 # long_polling_timeout=60 - максимальное время ожидания ответа
+
 
