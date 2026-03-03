@@ -1,5 +1,6 @@
 import qrcode  # библиотека для создания QR-кодов
 import os  # библиотека для работы с файловой системой (создание папок, проверка существования)
+from PIL import Image  # библиотека для работы с изображениями (нужна для вставки логотипа в QR-код)
 
 
 # основная функция для создания QR-кода
@@ -17,11 +18,9 @@ def generate_qr_code(qr_data,
     return filepath  # возвращаем путь к сохраненному файлу
 
 
-# функция, которая извлекает QR-код из разного формата данных о книге и генерирует QR-код (удобно, если данные о книгах в разных форматах)
+# функция, которая извлекает QR-код из разного формата данных о книге и генерирует QR-код с логотипом школы (удобно, если данные о книгах в разных форматах)
 def generate_qr_for_book(book_info,
                          folder="qrcodes"):  # book_info - информация о книге в любом формате; folder - папка для сохранения QR-кода
-    BOT_USERNAME = "library192_bot"  # имя бота через username
-
     if isinstance(book_info, dict):  # если передан словарь
         qr_data = book_info.get('qr_code', book_info.get('id', 'unknown'))
     elif isinstance(book_info, (list, tuple)):  # если передан список или кортеж
@@ -29,19 +28,42 @@ def generate_qr_for_book(book_info,
     else:  # если передана просто строка или число
         qr_data = str(book_info)  # преобразуем в строку
 
-    link = f"https://t.me/library192_bot?start={qr_data}" # формируем ссылку на бота с кодом книги (qr_data — код книги)
+    link = f"https://t.me/library192_bot?start={qr_data}" # формируем ссылку на tg-бота с кодом книги (qr_data — код книги)
 
-    # проверяем, есть ли папка qrcodes/. если нет — создаём её.
+    # Проверяем, есть ли папка qrcodes/. Если нет — создаём её.
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    # Генерируем QR-код из ссылки
-    qr = qrcode.make(link)  # берём ссылку и превращаем её в QR-код.
+    # создаём QR-код с высоким уровнем коррекции (для возможности добавить логотип)
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H)
+    qr.add_data(link)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
+
+    # добавляем логотип школы в центр (если файл существует)
+    logo_path = "logo.png"  # путь к файлу с логотипом (лежит в папке с проектом)
+    if os.path.exists(logo_path):
+        try:  # пробуем добавить логотип в центр QR-кода
+            logo = Image.open(logo_path)  # открываем файл с логотипом и загружаем его в память как изображение, с которым можно работать
+            # уменьшаем логотип до подходящего размера (QR-код с высоким уровнем коррекции может восстановить до 30% повреждённой информации)
+            logo.thumbnail((170, 170))
+            # рассчитываем позицию для центра
+            # img.size[0] - ширина QR, logo.size[0] - ширина логотипа, (img.size[0] - logo.size[0]) - свободное место
+            pos = ((img.size[0] - logo.size[0]) // 2, (img.size[1] - logo.size[1]) // 2)
+            # Вставляем логотип
+            # img.paste(что вставляем, куда вставляем(координаты), прозрачность(чтобы фон логотипа не закрашивал QR))
+            # logo.mode == 'RGBA' - проверяем, есть ли у логотипа прозрачный фон. Если есть — используем его как маску (прозрачные части не закрасят QR), если нет — вставляем как есть
+            img.paste(logo, pos, mask=logo if logo.mode == 'RGBA' else None)
+            print(f"Логотип добавлен в QR-код {qr_data}")
+        except Exception as e:  # выводим ошибку, если не получилось
+            print(f"Не удалось добавить логотип для {qr_data}: {e}")
+
     filename = f"{qr_data}.png"  # создаём имя файла типа TEST-001.png
-    filepath = os.path.join(folder, filename)  # сохраняем путь к файлу (cклеиваем папку и имя файла: qrcodes/TEST-001.png)
-    qr.save(filepath)  # сохраняем картинку
+    filepath = os.path.join(folder, filename)  # сохраняем путь к файлу (Склеиваем папку и имя файла: qrcodes/TEST-001.png)
+    img.save(filepath)  # сохраняем картинку
 
     return filepath  # возвращаем путь к файлу
+
 
 # функция генерирует QR-коды для списка книг
 def generate_all_qr_codes(books_list,
