@@ -128,6 +128,34 @@ def delete_user(tg_id):  # Удаляет пользователя из базы
         conn.close()  # закрываем базу данных
 
 
+# Функция замены Telegram ID пользователя при потере аккаунта
+def update_teacher_tg_id(old_tg_id, new_tg_id):
+    # Обновляем Telegram ID учителя (при смене аккаунта)
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()  # создаем курсор для выполнения SQL-команд
+
+    # Проверяем, не занят ли новый ID
+    cursor.execute('SELECT id FROM users WHERE tg_id = ?', (new_tg_id,))
+    if cursor.fetchone():  # проверяем не используется ли данный Telegram ID
+        conn.close()  # закрываем базу данных
+        return False, "Новый ID уже используется другим пользователем"
+
+    # Обновляем ID
+    cursor.execute('''
+        UPDATE users 
+        SET tg_id = ? 
+        WHERE tg_id = ?
+    ''', (new_tg_id, old_tg_id))
+
+    if cursor.rowcount == 0:  # проверяем сколько записей было обновлено
+        conn.close()  # закрываем базу данных
+        return False, "Поользователь со старым ID не найден"
+
+    conn.commit()  # сохраняем изменения
+    conn.close()  # закрываем базу данных
+    return True, f"Telegram ID пользователя обновлён: {old_tg_id} → {new_tg_id}"
+
+
 # функция проверки разрешения пользователя на пользование ботом
 def check_user_permit(tg_id):
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
