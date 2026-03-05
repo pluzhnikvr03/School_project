@@ -235,6 +235,24 @@ def handle_stop_help(message):
         bot.reply_to(message, "Вы и так не в режиме помощи")
 
 
+@bot.message_handler(commands=['update_teacher'])
+def handle_update_teacher(message):
+    """Обновляет Telegram ID учителя"""
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "Эта функция только для админа!")
+        return
+
+    try:
+        old_id, new_id = message.text.split()[1:]
+        old_id = int(old_id)
+        new_id = int(new_id)
+
+        success, msg = update_teacher_tg_id(old_id, new_id)
+        bot.reply_to(message, msg)
+    except:
+        bot.reply_to(message, "Использование: /update_teacher старый айди новый айди")
+
+
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
 
 @bot.message_handler(func=lambda message: user_waiting_for_data.get(message.from_user.id, False))
