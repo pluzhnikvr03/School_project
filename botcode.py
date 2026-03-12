@@ -250,7 +250,8 @@ def handle_update_teacher(message):
         success, msg = update_teacher_tg_id(old_id, new_id)
         bot.reply_to(message, msg)
     except:
-        bot.reply_to(message, "Использование: /update_teacher старый айди новый айди")
+        bot.reply_to(message, "Использование: /update_teacher старый ID новый ID")
+        bot.reply_to(message, "Telegram ID можно узнать у бота @userinfobot или посмотреть в профиле")
 
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
@@ -729,5 +730,6 @@ def handle_all_messages(message):
 bot.infinity_polling(timeout=60, long_polling_timeout=60) # запускаем бота в режиме бесконечного опроса
 # timeout=60 - таймаут на запрос к Telegram
 # long_polling_timeout=60 - максимальное время ожидания ответа
+
 
 
