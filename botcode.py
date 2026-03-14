@@ -1,7 +1,8 @@
 import telebot
 from telebot import types # импортируем типы данных для создания кнопок и клавиатур
-import config  # берем токен из config.py
+from config import all # берем токен и ID админа из config.py
 from database import *  # импортируем все функции из database.py
+
 
 create_database() # создаем базу данных при запуске (таблицы создадутся, если их нет)
 
@@ -14,7 +15,6 @@ user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 # Состояния для учителя
 teacher_acting_for = {}  # {teacher_id: student_tg_id} - учитель действует за ученика
 teacher_temp_data = {}   # {teacher_id: {'step': 'waiting_class', ...}} - временные данные для выбора ученика
-ADMIN_ID = 8523221712  # временный админ (tg bleb)
 
 
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
