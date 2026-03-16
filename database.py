@@ -151,8 +151,8 @@ def delete_user(tg_id):  # Удаляет пользователя из базы
 
 
 # Функция замены Telegram ID пользователя при потере аккаунта
-def update_teacher_tg_id(old_tg_id, new_tg_id):
-    # Обновляем Telegram ID учителя (при смене аккаунта)
+def update_tg_id(old_tg_id, new_tg_id):
+    # Обновляем Telegram ID (при смене аккаунта)
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
     cursor = conn.cursor()  # создаем курсор для выполнения SQL-команд
 
@@ -268,6 +268,37 @@ def return_book(tg_id, qr_code):
     conn.commit()  # сохраняем изменения
     conn.close()  # закрываем соединение
     return True  # возвращаем True - книга успешно возвращена
+
+
+# функция возврата всех книг(возвращается кортеж: (успех(True/False), количество возвращенных книг))
+def return_all_books(tg_id):
+    """
+    Возвращает все книги, которые сейчас на руках у пользователя
+    """
+    conn = sqlite3.connect('library.db')  # подключаемся к базе данных
+    cursor = conn.cursor()  # активируем курсор для выполнения SQL-команд
+
+    # Находим ID пользователя по tg_id
+    cursor.execute('SELECT id FROM users WHERE tg_id = ?', (tg_id,))  # находим id пользователя
+    user = cursor.fetchone()  # fetchone() получает первую найденную запись или None, если ничего не найдено (возвращается в виде кортежа (qr_code,) или None)
+
+    if not user:  # если пользователь не найден
+        conn.close()  # закрываем соединение с базой данных
+        return False, 0  # сообщаем о неудаче
+
+    # Обновляем все активные записи (return_date IS NULL)
+    cursor.execute('''
+        UPDATE records 
+        SET return_date = date('now')
+        WHERE user_id = ? AND return_date IS NULL
+    ''', (user[0],))
+
+    returned_count = cursor.rowcount  # счетчик измененных строк(т.е. сколько книг сдалось)
+    conn.commit()  # сохраняем изменения
+    conn.close()  # закрываем соединение с базой данных
+
+    return returned_count > 0, returned_count  # возвращаем True/False(сдались ли книги) и сколько книг сдалось
+
 
 # функция возврата информации о владельце книги
 def get_book_owner_info(qr_code):  # qr_code - код книги, которую нужно проверить
