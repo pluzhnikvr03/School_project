@@ -1,6 +1,6 @@
 import telebot
 from telebot import types # импортируем типы данных для создания кнопок и клавиатур
-from config import all # берем токен и ID админа из config.py
+import config  # берем токен и ID админа из config.py
 from database import *  # импортируем все функции из database.py
 
 
@@ -29,14 +29,25 @@ def create_role_keyboard():
     return keyboard
 
 
-def create_book_action_keyboard(qr_code):
-    """Создает клавиатуру с выбором действия для книги"""
-    keyboard = types.InlineKeyboardMarkup(row_width=2) # создаем клавиатуру с шириной ряда в 2 кнопки
-    keyboard.add( # добавляем три кнопки
-        types.InlineKeyboardButton("Взять", callback_data=f"take_{qr_code}"), # при нажатии вернется "take_QR-код"
-        types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}"), # при нажатии вернется "return_QR-код"
-        types.InlineKeyboardButton("Кому принадлежит?", callback_data=f"who_{qr_code}") # при нажатии вернется "who_QR-код"
-    )
+def create_book_action_keyboard(qr_code, user_status):
+    """
+    Создает клавиатуру с учетом роли пользователя
+    - Для учеников: только «Взять» и «Кому принадлежит?»
+    - Для учителей: все три кнопки (включая «Вернуть»)
+    """
+    keyboard = types.InlineKeyboardMarkup(row_width=2) # создаем клавиатуру с двумя кнопками в ряду
+
+    # Кнопки, доступные всем
+    buttons = [
+        types.InlineKeyboardButton("Взять", callback_data=f"take_{qr_code}"),
+        types.InlineKeyboardButton("Кому принадлежит?", callback_data=f"who_{qr_code}")
+    ]
+
+    # Кнопка «Вернуть» только для учителей
+    if user_status == 'teacher':
+        buttons.append(types.InlineKeyboardButton("Вернуть", callback_data=f"return_{qr_code}"))
+
+    keyboard.add(*buttons)
     return keyboard
 
 def create_confirm_keyboard(teacher_id):
@@ -102,6 +113,7 @@ def handle_start(message):
 Добро пожаловать в электронную библиотеку школы №192!
 
 Для начала работы необходимо зарегистрироваться.
+Регистрируйтесь под собственным именем. Его будут видеть учителя!
 
 Введите ваши данные в формате:
 Для ученика: Фамилия Имя Отчество Класс
@@ -122,8 +134,9 @@ def handle_start(message):
 
 @bot.message_handler(commands=['books'])
 def handle_my_books(message):
-    """Показывает книги, которые сейчас на руках у пользователя"""
+    """Показывает книги, которые сейчас на руках у пользователя и добавляет кнопку массовой сдачи"""
     user_id = message.from_user.id
+    user_status = get_user_status(user_id)
 
     # Проверяем регистрацию
     if not is_user_registered(user_id):
@@ -146,7 +159,20 @@ def handle_my_books(message):
         text += f"{subject}\n"
         text += f"Взята: {issue_date}\n\n"
 
-    bot.reply_to(message, text)
+        # Добавляем кнопку массовой сдачи (только для учителей)
+        keyboard = None
+        if user_status == 'teacher':
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                "Сдать все книги",
+                callback_data="return_all"
+            ))
+
+        bot.send_message(
+            message.chat.id,
+            text,
+            reply_markup=keyboard
+        )
 
 
 @bot.message_handler(commands=['help'])
@@ -235,9 +261,9 @@ def handle_stop_help(message):
         bot.reply_to(message, "Вы и так не в режиме помощи")
 
 
-@bot.message_handler(commands=['update_teacher'])
+@bot.message_handler(commands=['update_id'])
 def handle_update_teacher(message):
-    """Обновляет Telegram ID учителя"""
+    """Обновляет Telegram ID пользователя"""
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "Эта функция только для админа!")
         return
@@ -247,11 +273,58 @@ def handle_update_teacher(message):
         old_id = int(old_id)
         new_id = int(new_id)
 
-        success, msg = update_teacher_tg_id(old_id, new_id)
+        success, msg = update_tg_id(old_id, new_id)
         bot.reply_to(message, msg)
     except:
-        bot.reply_to(message, "Использование: /update_teacher старый ID новый ID")
+        bot.reply_to(message, "Использование: /update_id старый ID новый ID")
         bot.reply_to(message, "Telegram ID можно узнать у бота @userinfobot или посмотреть в профиле")
+
+
+@bot.message_handler(commands=['reregistaration'])
+def handle_reregistaration(message):
+    """
+    Полный сброс состояния пользователя.
+    Позволяет начать регистрацию заново, если что-то зависло.
+    """
+    user_id = message.from_user.id
+
+    # Очищаем все состояния пользователя
+    cleared = []
+
+    if user_id in user_waiting_for_data:
+        del user_waiting_for_data[user_id]
+        cleared.append("ожидание данных")
+
+    if user_id in user_data_temp:
+        del user_data_temp[user_id]
+        cleared.append("временные данные")
+
+    if user_id in user_pending_action:
+        del user_pending_action[user_id]
+        cleared.append("ожидание QR")
+
+    if user_id in teacher_acting_for:
+        del teacher_acting_for[user_id]
+        cleared.append("режим помощи")
+
+    if user_id in teacher_temp_data:
+        del teacher_temp_data[user_id]
+        cleared.append("выбор ученика")
+
+    # Формируем сообщение о результате
+    if cleared:
+        result_text = f"Сброшены состояния: {', '.join(cleared)}.\n\nТеперь можете начать заново с команды /start"
+    else:
+        result_text = "У вас не было активных состояний. Можете нажимать /start"
+
+    # Отправляем результат и сразу запускаем регистрацию
+    bot.send_message(
+        message.chat.id,
+        result_text
+    )
+
+    # Автоматически запускаем /start
+    handle_start(message)
 
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
@@ -293,6 +366,9 @@ def handle_registration_data(message):
     bot.reply_to(message,
                  "Выберите вашу роль:",
                  reply_markup=create_role_keyboard())
+    bot.reply_to(message, "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistaration")
+
+
 
 
 # ========== ОБРАБОТЧИКИ INLINE-КНОПОК ==========
@@ -679,6 +755,86 @@ def handle_inline_buttons(call):
         bot.answer_callback_query(call.id) # отвечаем на callback
         return
 
+    # ===== МАССОВЫЙ ВОЗВРАТ КНИГ =====
+    if callback_data == "return_all":
+        # Проверяем, что это учитель
+        if get_user_status(user_id) != 'teacher':
+            bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
+            return
+
+        # Определяем, за кого действуем
+        acting_user_id = teacher_acting_for.get(user_id, user_id) # проверка за кого действвует учитель (потом допишу)
+
+        # Получаем информацию об ученике (если действуем за кого-то)
+        target_name = "себя"
+        if acting_user_id != user_id:
+            conn = sqlite3.connect('library.db')
+            cursor = conn.cursor()
+            cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (acting_user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                target_name = f"ученика {result[0]}"
+
+        # Создаём клавиатуру подтверждения
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{acting_user_id}"),
+            types.InlineKeyboardButton("Отмена", callback_data="cancel_return_all")
+        )
+
+        bot.edit_message_text(
+            f"Подтверждение\n\n"
+            f"Вы собираетесь сдать ВСЕ книги за {target_name}.\n"
+            f"Продолжить?",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard
+        )
+        return
+
+    if callback_data.startswith("confirm_return_all_"):
+        # Извлекаем ID пользователя, за которого сдаём
+        target_id = int(callback_data.replace("confirm_return_all_", ""))
+
+        success, count = return_all_books(target_id)
+
+        if success:
+            # Получаем имя для красивого ответа
+            target_name = "себя"
+            if target_id != user_id:
+                conn = sqlite3.connect('library.db')
+                cursor = conn.cursor()
+                cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
+                result = cursor.fetchone()
+                conn.close()
+                if result:
+                    target_name = f"ученика {result[0]}"
+
+            bot.edit_message_text(
+                f"Успешно!\n\n"
+                f"Сдано книг: {count}\n"
+                f"За {target_name}",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                "Ошибка\n\n"
+                "Не удалось сдать книги. Возможно, их уже нет на руках.",
+                call.message.chat.id,
+                call.message.message_id,
+            )
+        return
+
+    if callback_data == "cancel_return_all":
+        bot.edit_message_text(
+            "Cдача отменена.",
+            call.message.chat.id,
+            call.message.message_id
+        )
+        return
+
 
 # ========== ОБРАБОТЧИК QR-КОДОВ ==========
 
@@ -718,10 +874,12 @@ def handle_all_messages(message):
 Выберите действие:
         """
 
+        # Получаем статус пользователя
+        user_status = get_user_status(user_id)  # 'student' или 'teacher'
         bot.reply_to( # отвечаем
             message,
             book_text,
-            reply_markup=create_book_action_keyboard(text) # прикрепляем клавиатуру с кнопками
+            reply_markup=create_book_action_keyboard(text, user_status) # прикрепляем клавиатуру с кнопками
         )
 
 
