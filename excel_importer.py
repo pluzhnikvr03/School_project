@@ -92,14 +92,29 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                             except:  # в случае любой ошибки
                                 pass  # если не получилось — оставляем 0
 
+                        # жёсткая защита от мусора
+                        # проверяем, что количество не супер большое
+                        if count > 500:
+                            print(f"Пропущена строка {idx}: слишком много экземпляров ({count})")
+                            continue
+
+                        # проверяем, что год не пустой и не равен 0
+                        if pd.isna(year) or str(year).strip() in ['', '0'] or int(float(year)) < 1900:
+                            print(f"Пропущена строка {idx}: неверный год ({year})")
+                            continue
+
+                        # проверяем, что автор не является числом
+                        if str(author).replace('.', '').replace(',', '').isdigit():
+                            print(f"Пропущена строка {idx}: автор похож на число ({author})")
+                            continue
+
                         # проверяем, что класс, предмет и автор не пустые и не NaN
                         if (pd.isna(class_num) or pd.isna(subject) or pd.isna(author) or 
-                            str(class_num).strip() == '' or str(subject).strip() == '' or 
-                            str(author).strip() == '' or 'сумма' in str(subject).lower()):
-                            continue  # пропускаем мусорные строки
-
-                        # также проверяем, что год не равен 0 или пустой
-                        if pd.isna(year) or str(year).strip() == '' or str(year).strip() == '0':
+                            str(class_num).strip() in ['', 'nan', 'None'] or
+                            str(subject).strip() in ['', 'nan', 'None'] or
+                            str(author).strip() in ['', 'nan', 'None'] or
+                            'сумма' in str(subject).lower()):
+                            print(f"Пропущена строка {idx}: неполные данные")
                             continue
 
                         # проверяем, есть ли осмысленные данные: количество больше нуля, и мы смогли получить предмет, автора и класс
