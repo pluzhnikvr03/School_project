@@ -1,3 +1,6 @@
 pyTelegramBotAPI==4.19.1
 qrcode[pil]==7.4.2
 Pillow==10.1.0
+pandas  # главная библиотека Python для работы с табличными данными
+openpyxl  # библиотека для прямого чтения и записи файлов Excel (.xlsx)
+reportlab  # библиотека для создания PDF с QR-кодами
