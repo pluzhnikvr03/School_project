@@ -55,11 +55,11 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                     class_col = col  # берем название колонки, превращаем его в строку и делаем все буквы маленькими, чтобы не путать "Класс" и "класс"
                 elif 'предмет' in col_str:  # предмет
                     subject_col = col
-                elif 'автор' in col_str or 'заглавие' in col_str:  # автор
+                elif ('автор' in col_str or 'заглавие' in col_str) and not 'кол' in col_str:  # автор
                     author_col = col
                 elif 'год' in col_str:  # год издания
                     year_col = col
-                elif 'кол' in col_str or 'количество' in col_str:  # количество экзмпляров
+                elif 'кол' in col_str and ('пост' in col_str or 'экз' in col_str or 'количество' in col_str):  # количество экзмпляров
                     count_col = col
 
             # если на листе есть все нужные колонки, обрабатываем его
@@ -77,6 +77,12 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                         # берем из строки (row) значение в колонке, имя которой мы сохранили в class_col
                         # превращаем это значение в строку и убираем лишние пробелы в начале и конце
 
+                        # проверка, что автор не является числом:
+                        author_val = str(row[author_col]).strip()
+                        if author_val.replace('.', '').replace(',', '').isdigit():
+                            print(f"Пропущена строка: автор похож на число ({author_val})")
+                            continue
+
                         # пытаемся получить количество экземпляров
                         count = 0  # для удобства предполагаем, что пока что экземпляров 0
                         if pd.notna(row[count_col]):  # если ячейка не пустая
@@ -85,6 +91,16 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                                 count = int(float(row[count_col]))  # преобразуем в целое число
                             except:  # в случае любой ошибки
                                 pass  # если не получилось — оставляем 0
+
+                        # проверяем, что класс, предмет и автор не пустые и не NaN
+                        if (pd.isna(class_num) or pd.isna(subject) or pd.isna(author) or 
+                            str(class_num).strip() == '' or str(subject).strip() == '' or 
+                            str(author).strip() == '' or 'сумма' in str(subject).lower()):
+                            continue  # пропускаем мусорные строки
+
+                        # также проверяем, что год не равен 0 или пустой
+                        if pd.isna(year) or str(year).strip() == '' or str(year).strip() == '0':
+                            continue
 
                         # проверяем, есть ли осмысленные данные: количество больше нуля, и мы смогли получить предмет, автора и класс
                         if count > 0 and subject and author and class_num:
