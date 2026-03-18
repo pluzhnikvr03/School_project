@@ -136,66 +136,64 @@ def handle_start(message):
 
 @bot.message_handler(commands=['books'])
 def handle_my_books(message):
-    """Показывает книги на руках и добавляет кнопку массовой сдачи для учителя"""
+    """Показывает книги на руках"""
     user_id = message.from_user.id
     user_status = get_user_status(user_id)
 
-    # Проверяем регистрацию
+    # ===== ПРОВЕРКА РЕГИСТРАЦИИ =====
     if not is_user_registered(user_id):
         bot.reply_to(message, "Сначала зарегистрируйтесь через /start")
         return
 
-    # ОПРЕДЕЛЯЕМ, ЧЬИ КНИГИ ПОКАЗЫВАТЬ
+    # ===== ОПРЕДЕЛЯЕМ, ЧЬИ КНИГИ ПОКАЗЫВАТЬ =====
+    # Если учитель в режиме помощи — показываем книги ученика
     if user_id in teacher_acting_for:
-        # Если учитель в режиме помощи — показываем книги ученика
-        target_id = teacher_acting_for[user_id]
-        target_name = "выбранного ученика"
-
+        target_id = teacher_acting_for[user_id]  # ID ученика
+        
+        # Получаем ФИО ученика для красивого сообщения
         conn = sqlite3.connect('library.db')
         cursor = conn.cursor()
         cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
         result = cursor.fetchone()
         conn.close()
-        if result:
-            target_name = f"ученика {result[0]}"
-        action_for = target_id  # запоминаем, для кого нужна массовая сдача
+        
+        target_name = f"ученика {result[0]}" if result else "выбранного ученика"
     else:
         # Если не в режиме помощи — показываем свои книги
         target_id = user_id
         target_name = "вас"
-        action_for = user_id
 
-    # Получаем книги
+    # ===== ПОЛУЧАЕМ СПИСОК КНИГ =====
     books = get_user_current_books(target_id)
 
     if not books:
-        bot.reply_to(message, f"У {target_name} пока нет книг.")
+        bot.reply_to(message, f"У {target_name} нет книг.")
         return
 
-    # Формируем текст со списком книг
+    # ===== ФОРМИРУЕМ ТЕКСТ СООБЩЕНИЯ =====
+    if user_id not in teacher_acting_for:
+        target_name = 'ваши'
     text = f"КНИГИ {target_name.upper()}:\n\n"
     for book in books:
-        subject = book[0]
-        issue_date = book[3]
+        subject = book[0]          # Название книги
+        issue_date = book[3]        # Дата выдачи
+        text += f"{subject}\nВзята: {issue_date}\n\n"
 
-        text += f"{subject}\n"
-        text += f"Взята: {issue_date}\n\n"
-
-    # Добавляем кнопку массовой сдачи (только для учителей)
+    # ===== КНОПКА ДЛЯ УЧИТЕЛЯ (МАССОВАЯ СДАЧА) =====
     keyboard = None
-    if user_status == 'teacher':
+    if user_status == 'teacher':  # только для учителей
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(
-            "Сдать все книги",
-            callback_data=f"return_all_{action_for}"
+            "Сдать все книги", 
+            callback_data=f"return_all_{target_id}"
         ))
 
+    # ===== ОТПРАВЛЯЕМ СООБЩЕНИЕ =====
     bot.send_message(
         message.chat.id,
         text,
         reply_markup=keyboard
     )
-
 
 @bot.message_handler(commands=['help'])
 def handle_act_start(message):
@@ -824,28 +822,17 @@ def handle_inline_buttons(call):
         bot.answer_callback_query(call.id)  # отвечаем на callback
         return
 
-        # ===== МАССОВЫЙ ВОЗВРАТ КНИГ =====
+        # ===== МАССОВАЯ СДАЧА КНИГ =====
         if callback_data.startswith("return_all_"):
-            # Проверяем, что это учитель
+            # Проверяем, что кнопку нажал учитель
             if get_user_status(user_id) != 'teacher':
                 bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
                 return
 
-            # Извлекаем ID пользователя, за которого сдаём
+            # Извлекаем ID ученика (или учителя), за которого сдаём книги
             target_id = int(callback_data.replace("return_all_", ""))
 
-            # Получаем информацию для красивого ответа
-            target_name = "себя"
-            if target_id != user_id:
-                conn = sqlite3.connect('library.db')
-                cursor = conn.cursor()
-                cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
-                result = cursor.fetchone()
-                conn.close()
-                if result:
-                    target_name = f"ученика {result[0]}"
-
-            # Создаём клавиатуру подтверждения
+            # Спрашиваем подтверждение
             keyboard = types.InlineKeyboardMarkup(row_width=2)
             keyboard.add(
                 types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{target_id}"),
@@ -853,50 +840,36 @@ def handle_inline_buttons(call):
             )
 
             bot.edit_message_text(
-                f"Подтверждение\n\n"
-                f"Вы собираетесь сдать ВСЕ книги за {target_name}.\n"
-                f"Продолжить?",
+                f"Подтверждение\n\nВы уверены, что хотите сдать ВСЕ книги?",
                 call.message.chat.id,
                 call.message.message_id,
                 reply_markup=keyboard
             )
             return
 
+        # ===== ПОДТВЕРЖДЕНИЕ МАССОВОЙ СДАЧИ =====
         if callback_data.startswith("confirm_return_all_"):
-            # Извлекаем ID пользователя, за которого сдаём
+            # Извлекаем ID ученика, за которого сдаём
             target_id = int(callback_data.replace("confirm_return_all_", ""))
 
-            # Вызываем функцию массового возврата (её надо добавить в database.py)
+            # Вызываем функцию массового возврата из database.py
             success, count = return_all_books(target_id)
 
             if success:
-                # Получаем имя для красивого ответа
-                target_name = "себя"
-                if target_id != user_id:
-                    conn = sqlite3.connect('library.db')
-                    cursor = conn.cursor()
-                    cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
-                    result = cursor.fetchone()
-                    conn.close()
-                    if result:
-                        target_name = f"ученика {result[0]}"
-
                 bot.edit_message_text(
-                    f"Успешно!\n\n"
-                    f"Сдано книг: {count}\n"
-                    f"За {target_name}",
+                    f"Готово!\n\nСдано книг: {count}",
                     call.message.chat.id,
                     call.message.message_id
                 )
             else:
                 bot.edit_message_text(
-                    "Ошибка\n\n"
-                    "Не удалось сдать книги. Возможно, их уже нет на руках.",
+                    f"Ошибка\n\nНе удалось сдать книги. Возможно, их уже нет на руках.",
                     call.message.chat.id,
                     call.message.message_id
                 )
             return
 
+        # ===== ОТМЕНА МАССОВОЙ СДАЧИ =====
         if callback_data == "cancel_return_all":
             bot.edit_message_text(
                 "Сдача отменена.",
@@ -904,7 +877,6 @@ def handle_inline_buttons(call):
                 call.message.message_id
             )
             return
-
 
 # ========== ОБРАБОТЧИК QR-КОДОВ ==========
 
