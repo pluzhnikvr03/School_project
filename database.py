@@ -1,7 +1,7 @@
 import sqlite3  # библиотека для работы с базой данных SQLite
 import time  # библиотека для останавки программы при регистрации программу на некоторое количество секунд, чтобы не выдавало ошибки
 import random  # добавляем случайное число от 0 до 0.1 сек (случайность нужна, чтобы все ждали РАЗНОЕ время)
-from config import *  # берем Telegram ID администратора 
+from config import *  # берем Telegram ID администратора
 
 def create_database():  # создаем базу данных и таблицы
     conn = sqlite3.connect('library.db')  # создаем или подключаемся к уже созданному файлу базы данных "library.db"
@@ -26,7 +26,9 @@ def create_database():  # создаем базу данных и таблицы
          qr_code TEXT UNIQUE NOT NULL,
          subject TEXT NOT NULL,
          author TEXT NOT NULL,
-         year TEXT NOT NULL
+         year TEXT NOT NULL,
+         class TEXT,
+         copies INTEGER DEFAULT 1
      )
      ''')
 
@@ -414,6 +416,7 @@ def get_user_books_history(tg_id):
     conn.close()  # закрываем базу данных
     return books  # возвращаем список книг
 
+
 # функция возвращает список всех книг, которые у пользователя на руках
 def get_user_current_books(tg_id):
     conn = sqlite3.connect('library.db')  # подключаемся к базе данных
@@ -478,5 +481,5 @@ def add_books_to_database():
 if __name__ == "__main__":  # выполнится ТОЛЬКО если запустить database.py напрямую
     create_database()  # вызываем функцию create_database(), которая создаст таблицы users, books, records
     add_admin()  # автоматически добавляем администратора в базу данных при запуске
-    add_books_to_database()  # добавляем тестовые книги в базу и генерируем QR-коды
+    # add_books_to_database()  # добавляем тестовые книги в базу и генерируем QR-коды
     print("\nВСЁ ГОТОВО! Теперь можно запускать бота.")  # выводим сообщение о готовности системы
