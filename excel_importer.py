@@ -45,22 +45,48 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
             # сохраняем этот DataFrame в переменную df (стандартное имя для DataFrame в pandas)
             # sheet_name=sheet_name - открываем конкретную страницу файла и читаем ее
 
-            # автоматический поиск нужных колонок
-            # ищем колонки по их названиям (регистр не учитываем, так как он не важен)
-            class_col = subject_col = author_col = year_col = count_col = None
-            # создаём пять переменных и пока кладём в них None. туда мы сохраним настоящие названия колонок, когда найдём их
-            for col in df.columns:  # перебираем все названия колонок
-                col_str = str(col).lower()  # приводим к нижнему регистру
-                if 'класс' in col_str:
-                    class_col = col  # берем название колонки, превращаем его в строку и делаем все буквы маленькими, чтобы не путать "Класс" и "класс"
-                elif 'предмет' in col_str:  # предмет
-                    subject_col = col
-                elif ('автор' in col_str or 'заглавие' in col_str) and not 'кол' in col_str:  # автор
-                    author_col = col
-                elif 'год' in col_str:  # год издания
-                    year_col = col
-                elif 'кол' in col_str and ('пост' in col_str or 'экз' in col_str or 'количество' in col_str):  # количество экзмпляров
-                    count_col = col
+            # жёсткая привязка колонок для основных листов
+            if sheet_name in ['1-4', '5-9', '10-11']:
+                class_col = 'Класс'
+                subject_col = 'Предмет'
+                author_col = 'Автор и заглавие'
+                year_col = 'Год изд.'
+                count_col = 'Кол. пост. 43а'  # или другая колонка с количеством
+                
+                print(f"✅ Использую жёсткие колонки для листа {sheet_name}")
+                # пропускаем автоматический поиск
+            else:
+                # для остальных листов (например, пособия) используем автоматический поиск
+                # автоматический поиск нужных колонок
+                # автоматический поиск нужных колонок
+                # ищем колонки по их названиям (регистр не учитываем, так как он не важен)
+                class_col = subject_col = author_col = year_col = count_col = None
+                # создаём пять переменных и пока кладём в них None. туда мы сохраним настоящие названия колонок, когда найдём их
+                for col in df.columns:  # перебираем все названия колонок
+                    col_str = str(col).lower()  # приводим к нижнему регистру
+                    if 'класс' in col_str:
+                        class_col = col  # берем название колонки, превращаем его в строку и делаем все буквы маленькими, чтобы не путать "Класс" и "класс"
+                    elif 'предмет' in col_str:  # предмет
+                        subject_col = col
+                    elif ('автор' in col_str or 'заглавие' in col_str) and not 'кол' in col_str:  # автор
+                        author_col = col
+                    elif 'год' in col_str:  # год издания
+                        year_col = col
+                    elif 'кол' in col_str and ('пост' in col_str or 'экз' in col_str or 'количество' in col_str):  # количество экзмпляров
+                        count_col = col
+
+            # ===== ОТЛАДКА =====
+            print(f"Найденные колонки:")
+            print(f"  Класс: {class_col}")
+            print(f"  Предмет: {subject_col}")
+            print(f"  Автор: {author_col}")
+            print(f"  Год: {year_col}")
+            print(f"  Количество: {count_col}")
+
+            if not all([class_col, subject_col, author_col, year_col, count_col]):
+                print(f"⚠️ Не все колонки найдены на листе {sheet_name}, пропускаем...")
+                print(f"Доступные колонки: {list(df.columns)}")
+                continue
 
             # если на листе есть все нужные колонки, обрабатываем его
             if all([class_col, subject_col, author_col, year_col, count_col]):  # если хотя бы одна осталась None, то этот лист нам не подходит, и мы его пропускаем
@@ -78,10 +104,10 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                         # превращаем это значение в строку и убираем лишние пробелы в начале и конце
 
                         # проверка, что автор не является числом:
-                        author_val = str(row[author_col]).strip()
-                        if author_val.replace('.', '').replace(',', '').isdigit():
-                            print(f"Пропущена строка: автор похож на число ({author_val})")
-                            continue
+                        # author_val = str(row[author_col]).strip()
+                        # if author_val.replace('.', '').replace(',', '').isdigit():
+                            # print(f"Пропущена строка: автор похож на число ({author_val})")
+                             # continue
 
                         # пытаемся получить количество экземпляров
                         count = 0  # для удобства предполагаем, что пока что экземпляров 0
