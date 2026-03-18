@@ -664,7 +664,7 @@ def handle_inline_buttons(call):
                     f"Предмет: {additional}\n"
                     f"Telegram ID: [{user_id}](tg://user?id={user_id})\n"
                     f"Username: @{call.from_user.username or 'нет'}",
-                    #parse_mode='Markdown',  # для создания ссылки в поле Telegram ID
+                    parse_mode='Markdown',  # для создания ссылки в поле Telegram ID
                     reply_markup=create_confirm_keyboard(user_id)  # прикрепляем клавиатуру с кнопками подтверждения
                 )
             else:
