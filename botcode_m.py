@@ -162,7 +162,7 @@ def handle_my_books(message):
     else:
         # Если не в режиме помощи — показываем свои книги
         target_id = user_id
-        target_name = "ваши"
+        target_name = "вас"
         action_for = user_id
 
     # Получаем книги
@@ -186,7 +186,7 @@ def handle_my_books(message):
     if user_status == 'teacher':
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(
-            "Сдать все книги", 
+            "Сдать все книги",
             callback_data=f"return_all_{action_for}"
         ))
 
@@ -429,7 +429,7 @@ def handle_registration_data(message):
                  "Выберите вашу роль:",
                  reply_markup=create_role_keyboard())
     bot.reply_to(message,
-                 "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistaration")
+                 "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistration")
 
 
 # ========== ОБРАБОТЧИКИ INLINE-КНОПОК ==========
@@ -666,7 +666,7 @@ def handle_inline_buttons(call):
                     f"Предмет: {additional}\n"
                     f"Telegram ID: [{user_id}](tg://user?id={user_id})\n"
                     f"Username: @{call.from_user.username or 'нет'}",
-                    parse_mode='Markdown',  # для создания ссылки в поле Telegram ID
+                    #parse_mode='Markdown',  # для создания ссылки в поле Telegram ID
                     reply_markup=create_confirm_keyboard(user_id)  # прикрепляем клавиатуру с кнопками подтверждения
                 )
             else:
@@ -718,22 +718,30 @@ def handle_inline_buttons(call):
     if callback_data.startswith("return_"):
         qr_code = callback_data.replace("return_", "")  # извлекаем QR-код
 
-        acting_user_id = teacher_acting_for.get(user_id, user_id)  # определяем, от чьего имени возвращать
+        # ОПРЕДЕЛЯЕМ, ЗА КОГО ДЕЙСТВУЕМ
+        if user_id in teacher_acting_for:
+            # Учитель в режиме помощи — действуем за ученика
+            acting_user_id = teacher_acting_for[user_id]
+            print(f"Учитель {user_id} возвращает за ученика {acting_user_id}")
+        else:
+            # Обычный пользователь — действуем за себя
+            acting_user_id = user_id
+            print(f"Пользователь {acting_user_id} возвращает за себя")
+
+        # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА (для отладки)
+        if not is_user_registered(acting_user_id):
+            bot.answer_callback_query(call.id, "Ошибка: ученик не найден в БД")
+            return
 
         if return_book(acting_user_id, qr_code):  # пытаемся вернуть книгу
-            success_text = f"""
-Книга возвращена!
-            """
+            success_text = "Книга возвращена!"
             bot.edit_message_text(
                 success_text,
                 call.message.chat.id,
                 call.message.message_id
             )
         else:
-            error_text = f"""
-Не удалось вернуть книгу
-Книга не числится за вами.
-            """
+            error_text = "Не удалось вернуть книгу\nКнига не числится за вами."
             bot.edit_message_text(
                 error_text,
                 call.message.chat.id,
@@ -815,18 +823,18 @@ def handle_inline_buttons(call):
 
         bot.answer_callback_query(call.id)  # отвечаем на callback
         return
-        
+
         # ===== МАССОВЫЙ ВОЗВРАТ КНИГ =====
         if callback_data.startswith("return_all_"):
             # Проверяем, что это учитель
             if get_user_status(user_id) != 'teacher':
                 bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
                 return
-    
+
             # Извлекаем ID пользователя, за которого сдаём
             target_id = int(callback_data.replace("return_all_", ""))
-    
-            # Получаем информацию об ученике (если действуем за кого-то)
+
+            # Получаем информацию для красивого ответа
             target_name = "себя"
             if target_id != user_id:
                 conn = sqlite3.connect('library.db')
@@ -836,8 +844,6 @@ def handle_inline_buttons(call):
                 conn.close()
                 if result:
                     target_name = f"ученика {result[0]}"
-            else:
-                target_name = "себя"
 
             # Создаём клавиатуру подтверждения
             keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -859,9 +865,10 @@ def handle_inline_buttons(call):
         if callback_data.startswith("confirm_return_all_"):
             # Извлекаем ID пользователя, за которого сдаём
             target_id = int(callback_data.replace("confirm_return_all_", ""))
-    
+
+            # Вызываем функцию массового возврата (её надо добавить в database.py)
             success, count = return_all_books(target_id)
-    
+
             if success:
                 # Получаем имя для красивого ответа
                 target_name = "себя"
@@ -873,7 +880,7 @@ def handle_inline_buttons(call):
                     conn.close()
                     if result:
                         target_name = f"ученика {result[0]}"
-        
+
                 bot.edit_message_text(
                     f"Успешно!\n\n"
                     f"Сдано книг: {count}\n"
