@@ -45,34 +45,38 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
             # сохраняем этот DataFrame в переменную df (стандартное имя для DataFrame в pandas)
             # sheet_name=sheet_name - открываем конкретную страницу файла и читаем ее
 
-            # жёсткая привязка колонок для основных листов
+            # ===== ЖЁСТКАЯ ПРИВЯЗКА КОЛОНОК =====
             if sheet_name in ['1-4', '5-9', '10-11']:
                 class_col = 'Класс'
                 subject_col = 'Предмет'
                 author_col = 'Автор и заглавие'
                 year_col = 'Год изд.'
-                count_col = 'Кол. пост. 43а'  # или другая колонка с количеством
+                # КАКАЯ ИМЕННО КОЛОНКА С КОЛИЧЕСТВОМ?
+                # В твоём файле их три: 34а, 39а, 43а
+                # Нужно выбрать правильную!
+                count_col = 'Кол. пост. 43а'  # попробуй эту, если не сработает - меняй
                 
-                print(f"✅ Использую жёсткие колонки для листа {sheet_name}")
-                # пропускаем автоматический поиск
+                print(f"Использую жёсткие колонки для листа {sheet_name}")
+                print(f"Класс: {class_col}")
+                print(f"Предмет: {subject_col}")
+                print(f"Автор: {author_col}")
+                print(f"Год: {year_col}")
+                print(f"Количество: {count_col}")
+                
             else:
-                # для остальных листов (например, пособия) используем автоматический поиск
-                # автоматический поиск нужных колонок
-                # автоматический поиск нужных колонок
-                # ищем колонки по их названиям (регистр не учитываем, так как он не важен)
+                # автоматический поиск для других листов
                 class_col = subject_col = author_col = year_col = count_col = None
-                # создаём пять переменных и пока кладём в них None. туда мы сохраним настоящие названия колонок, когда найдём их
-                for col in df.columns:  # перебираем все названия колонок
-                    col_str = str(col).lower()  # приводим к нижнему регистру
+                for col in df.columns:
+                    col_str = str(col).lower()
                     if 'класс' in col_str:
-                        class_col = col  # берем название колонки, превращаем его в строку и делаем все буквы маленькими, чтобы не путать "Класс" и "класс"
-                    elif 'предмет' in col_str:  # предмет
+                        class_col = col
+                    elif 'предмет' in col_str:
                         subject_col = col
-                    elif ('автор' in col_str or 'заглавие' in col_str) and not 'кол' in col_str:  # автор
+                    elif ('автор' in col_str or 'заглавие' in col_str) and not 'кол' in col_str:
                         author_col = col
-                    elif 'год' in col_str:  # год издания
+                    elif 'год' in col_str:
                         year_col = col
-                    elif 'кол' in col_str and ('пост' in col_str or 'экз' in col_str or 'количество' in col_str):  # количество экзмпляров
+                    elif 'кол' in col_str and ('пост' in col_str or 'экз' in col_str or 'количество' in col_str):
                         count_col = col
 
             # ===== ОТЛАДКА =====
