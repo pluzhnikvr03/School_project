@@ -171,9 +171,11 @@ def handle_my_books(message):
         return
 
     # ===== ФОРМИРУЕМ ТЕКСТ СООБЩЕНИЯ =====
-    if user_id not in teacher_acting_for:
-        target_name = 'ваши'
-    text = f"КНИГИ {target_name.upper()}:\n\n"
+    if user_id in teacher_acting_for:
+        text = f"КНИГИ {target_name.upper()}:\n\n"
+    else:
+        text = "ВАШИ КНИГИ:\n\n"
+        
     for book in books:
         subject = book[0]          # Название книги
         issue_date = book[3]        # Дата выдачи
