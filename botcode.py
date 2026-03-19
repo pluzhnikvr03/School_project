@@ -4,6 +4,8 @@ import config  # берем токен и ID админа из config.py
 from database import *  # импортируем все функции из database.py
 import excel_importer  # импортируем файл, который автоматически заносит книги в базу данных из Excel-файла
 import os  # библиотека для работы с файлами
+from datetime import datetime
+
 
 create_database()  # создаем базу данных при запуске (таблицы создадутся, если их нет)
 
@@ -287,47 +289,49 @@ def handle_update_teacher(message):
 
 @bot.message_handler(commands=['reregistaration'])
 def handle_reregistaration(message):
-    """ Команда сброса регистрации и очистка всех временных состояний """
+    """
+    Полный сброс состояния пользователя.
+    Позволяет начать регистрацию заново, если что-то зависло.
+    """
     user_id = message.from_user.id
 
-    # ОЧИЩАЕМ ВСЕ СОСТОЯНИЯ В ПАМЯТИ
-    states_to_check = {
-        user_waiting_for_data,
-        user_data_temp,
-        user_pending_action,
-        teacher_acting_for,
-        teacher_temp_data
-    }
-    
-    for state_dict in states_to_check:
-        if user_id in state_dict:
-            del state_dict[user_id]
+    # Очищаем все состояния пользователя
+    cleared = []
 
-    # РАБОТА С БАЗОЙ (УДАЛЯЕМ НЕПОДТВЕРЖДЁННЫХ)
-    conn = sqlite3.connect('library.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT status, permit FROM users WHERE tg_id = ?', (user_id,))
-    user_data = cursor.fetchone()
+    if user_id in user_waiting_for_data:
+        del user_waiting_for_data[user_id]
+        cleared.append("ожидание данных")
 
-    if user_data:
-        status, permit = user_data
-        if not permit and status == 'teacher':
-            # Удаляем только неподтверждённых учителей
-            cursor.execute('DELETE FROM users WHERE tg_id = ?', (user_id,))
-            conn.commit()
-    
-    conn.close()
+    if user_id in user_data_temp:
+        del user_data_temp[user_id]
+        cleared.append("временные данные")
 
-    # ОТПРАВЛЯЕМ КОРОТКОЕ СООБЩЕНИЕ
+    if user_id in user_pending_action:
+        del user_pending_action[user_id]
+        cleared.append("ожидание QR")
+
+    if user_id in teacher_acting_for:
+        del teacher_acting_for[user_id]
+        cleared.append("режим помощи")
+
+    if user_id in teacher_temp_data:
+        del teacher_temp_data[user_id]
+        cleared.append("выбор ученика")
+
+    # Формируем сообщение о результате
+    if cleared:
+        result_text = f"Сброшены состояния: {', '.join(cleared)}.\n\nТеперь можете начать заново с команды /start"
+    else:
+        result_text = "У вас не было активных состояний. Можете нажимать /start"
+
+    # Отправляем результат и сразу запускаем регистрацию
     bot.send_message(
         message.chat.id,
-        "Сброс аккаунта выполнен.\nМожете начать регистрацию заново."
+        result_text
     )
 
-    # 4. ЗАПУСКАЕМ /start
-    time.sleep(1)
+    # Автоматически запускаем /start
     handle_start(message)
-
 
 
 @bot.message_handler(commands=['import_books'])
