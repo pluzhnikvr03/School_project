@@ -16,7 +16,7 @@ user_waiting_for_data = {}  # {user_id: True} - ожидает ввода дан
 user_data_temp = {}  # {user_id: {'fio': '...', 'additional': '...'}} - временное хранение введенных ФИО и класса/предмета
 user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 # Состояния для учителя
-teacher_acting_for = {}  # {tФeacher_id: student_tg_id} - учитель действует за ученика
+teacher_acting_for = {}  # {teacher_id: student_tg_id} - учитель действует за ученика
 teacher_temp_data = {}  # {teacher_id: {'step': 'waiting_class', ...}} - временные данные для выбора ученика
 
 
@@ -300,22 +300,26 @@ def handle_update_teacher(message):
 
 
 @bot.message_handler(commands=['reregistration'])
-def handle_reregistaration(message):
+def handle_reregistration(message):
     """Команда сброса регистрации"""
     user_id = message.from_user.id
 
     # ОЧИЩАЕМ ВСЕ СОСТОЯНИЯ В ПАМЯТИ
-    states_to_check = {
-        user_waiting_for_data,
-        user_data_temp,
-        user_pending_action,
-        teacher_acting_for,
-        teacher_temp_data
-    }
-    
-    for state_dict in states_to_check:
-        if user_id in state_dict:
-            del state_dict[user_id]
+    # проверяем, есть ли user_id в каждом словаре
+    if user_id in user_waiting_for_data:
+        del user_waiting_for_data[user_id]
+
+    if user_id in user_data_temp:
+        del user_data_temp[user_id]
+
+    if user_id in user_pending_action:
+        del user_pending_action[user_id]
+
+    if user_id in teacher_acting_for:
+        del teacher_acting_for[user_id]
+
+    if user_id in teacher_temp_data:
+        del teacher_temp_data[user_id]
 
     # РАБОТА С БАЗОЙ (УДАЛЯЕМ НЕПОДТВЕРЖДЁННЫХ)
     conn = sqlite3.connect('library.db')
@@ -453,7 +457,7 @@ def handle_registration_data(message):
                  "Выберите вашу роль:",
                  reply_markup=create_role_keyboard())
     bot.send_message(message.chat.id,
-                 "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistaration")
+                 "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistration")
 
 
 # ========== ОБРАБОТЧИКИ INLINE-КНОПОК ==========
