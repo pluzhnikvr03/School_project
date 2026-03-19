@@ -948,20 +948,24 @@ def handle_document(message):
 
         # проверяем, не вернулась ли ошибка (если есть ключ 'error' — значит что-то пошло не так)
         if 'error' in result:
-            bot.edit_message_text(f"Ошибка импорта: {result['error']}",
-                                      msg.chat.id, msg.message_id)
-        else:  # всё хорошо — показываем статистику
-            bot.edit_message_text(
+            bot.send_message(msg.chat.id, f"Ошибка импорта: {result['error']}")
+        else:
+            bot.send_message(
+                msg.chat.id,
                 f"Загрузка завершена!\n\n"
                 f"Книг добавлено: {result['added']}\n"
                 f"Всего экземпляров: {result['copies']}\n"
                 f"QR-кодов создано: {result['qrcodes']}\n"
                 f"Время: {result['time']} сек\n\n"
-                f"QR-коды сохранены в папке qrcodes/\n",
-                f"Введите команду /get_pdf для их получения.",
-                msg.chat.id,
-                msg.message_id
+                f"QR-коды сохранены в папке qrcodes/\n"
+                f"Введите команду /get_pdf для их получения."
             )
+            # удаляем старое сообщение "Создаю PDF..." если оно ещё существует
+            try:
+                bot.delete_message(msg.chat.id, msg.message_id)
+            except:
+                pass
+
     except Exception as e:
         # перехватываем любую ошибку и показываем её пользователю
         # str(e)[:200] — берём только первые 200 символов, чтобы не заспамить
