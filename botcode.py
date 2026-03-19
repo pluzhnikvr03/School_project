@@ -726,7 +726,7 @@ def handle_inline_buttons(call):
         # Спрашиваем подтверждение
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{target_id}"),
+            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"c_return_all_{target_id}"),
             types.InlineKeyboardButton("Отмена", callback_data="cancel_return_all")
         )
 
@@ -739,9 +739,9 @@ def handle_inline_buttons(call):
         return
 
     # ===== ПОДТВЕРЖДЕНИЕ МАССОВОЙ СДАЧИ =====
-    if callback_data.startswith("confirm_return_all_"):
+    if callback_data.startswith("c_return_all_"):
         # Извлекаем ID ученика, за которого сдаём
-        target_id = int(callback_data.replace("confirm_return_all_", ""))
+        target_id = int(callback_data.replace("c_return_all_", ""))
 
         # Вызываем функцию массового возврата из database.py
         success, count = return_all_books(target_id)
