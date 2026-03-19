@@ -140,46 +140,58 @@ def handle_start(message):
 
 @bot.message_handler(commands=['books'])
 def handle_my_books(message):
-    """Показывает книги, которые сейчас на руках у пользователя и добавляет кнопку массовой сдачи"""
+    """Показывает книги на руках"""
     user_id = message.from_user.id
     user_status = get_user_status(user_id)
 
-    # Проверяем регистрацию
+    # ===== ПРОВЕРКА РЕГИСТРАЦИИ =====
     if not is_user_registered(user_id):
         bot.reply_to(message, "Сначала зарегистрируйтесь через /start")
         return
 
-    # Получаем книги пользователя из базы данных
-    books = get_user_current_books(user_id)
+    # ===== ОПРЕДЕЛЯЕМ, ЧЬИ КНИГИ ПОКАЗЫВАТЬ =====
+    # Если учитель в режиме помощи — показываем книги ученика
+    if user_id in teacher_acting_for:
+        target_id = teacher_acting_for[user_id]  # ID ученика
+        target_name = "выбранного ученика"
+    else:
+        # Если не в режиме помощи — показываем свои книги
+        target_id = user_id
+        target_name = "вас"
+
+    # ===== ПОЛУЧАЕМ СПИСОК КНИГ =====
+    books = get_user_current_books(target_id)
 
     if not books:
-        bot.reply_to(message, "У вас пока нет книг.")
+        bot.reply_to(message, f"У {target_name} нет книг.")
         return
 
-    text = "ВАШИ КНИГИ:\n\n"
-
+    # ===== ФОРМИРУЕМ ТЕКСТ СООБЩЕНИЯ =====
+    if user_id in teacher_acting_for:
+        text = f"КНИГИ {target_name.upper()}:\n\n"
+    else:
+        text = "ВАШИ КНИГИ:\n\n"
+        
     for book in books:
-        subject = book[0]  # Название книги
-        issue_date = book[3]  # Дата выдачи
+        subject = book[0]          # Название книги
+        issue_date = book[3]        # Дата выдачи
+        text += f"{subject}\nВзята: {issue_date}\n\n"
 
-        text += f"{subject}\n"
-        text += f"Взята: {issue_date}\n\n"
+    # ===== КНОПКА ДЛЯ УЧИТЕЛЯ (МАССОВАЯ СДАЧА) =====
+    keyboard = None
+    if user_status == 'teacher':  # только для учителей
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            "Сдать все книги", 
+            callback_data=f"return_all_{target_id}"
+        ))
 
-        # Добавляем кнопку массовой сдачи (только для учителей)
-        keyboard = None
-        if user_status == 'teacher':
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton(
-                "Сдать все книги",
-                callback_data="return_all"
-            ))
-
-        bot.send_message(
-            message.chat.id,
-            text,
-            reply_markup=keyboard
-        )
-
+    # ===== ОТПРАВЛЯЕМ СООБЩЕНИЕ =====
+    bot.send_message(
+        message.chat.id,
+        text,
+        reply_markup=keyboard
+    )
 
 @bot.message_handler(commands=['help'])
 def handle_act_start(message):
