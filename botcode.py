@@ -842,81 +842,57 @@ def handle_inline_buttons(call):
         bot.answer_callback_query(call.id)  # отвечаем на callback
         return
 
-    # ===== МАССОВЫЙ ВОЗВРАТ КНИГ =====
-    if callback_data == "return_all":
-        # Проверяем, что это учитель
+    # ===== МАССОВАЯ СДАЧА КНИГ =====
+    if callback_data.startswith("return_all_"):
+        # Проверяем, что кнопку нажал учитель
         if get_user_status(user_id) != 'teacher':
             bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
             return
 
-        # Определяем, за кого действуем
-        acting_user_id = teacher_acting_for.get(user_id, user_id)  # проверка за кого действвует учитель (потом допишу)
+        # Извлекаем ID ученика (или учителя), за которого сдаём книги
+        target_id = int(callback_data.replace("return_all_", ""))
 
-        # Получаем информацию об ученике (если действуем за кого-то)
-        target_name = "себя"
-        if acting_user_id != user_id:
-            conn = sqlite3.connect('library.db')
-            cursor = conn.cursor()
-            cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (acting_user_id,))
-            result = cursor.fetchone()
-            conn.close()
-            if result:
-                target_name = f"ученика {result[0]}"
-
-        # Создаём клавиатуру подтверждения
+        # Спрашиваем подтверждение
         keyboard = types.InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{acting_user_id}"),
+            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{target_id}"),
             types.InlineKeyboardButton("Отмена", callback_data="cancel_return_all")
         )
 
         bot.edit_message_text(
-            f"Подтверждение\n\n"
-            f"Вы собираетесь сдать ВСЕ книги за {target_name}.\n"
-            f"Продолжить?",
+            f"Подтверждение\n\nВы уверены, что хотите сдать ВСЕ книги?",
             call.message.chat.id,
             call.message.message_id,
             reply_markup=keyboard
         )
         return
 
+    # ===== ПОДТВЕРЖДЕНИЕ МАССОВОЙ СДАЧИ =====
     if callback_data.startswith("confirm_return_all_"):
-        # Извлекаем ID пользователя, за которого сдаём
+        # Извлекаем ID ученика, за которого сдаём
         target_id = int(callback_data.replace("confirm_return_all_", ""))
 
+        # Вызываем функцию массового возврата из database.py
         success, count = return_all_books(target_id)
 
         if success:
-            # Получаем имя для красивого ответа
-            target_name = "себя"
-            if target_id != user_id:
-                conn = sqlite3.connect('library.db')
-                cursor = conn.cursor()
-                cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
-                result = cursor.fetchone()
-                conn.close()
-                if result:
-                    target_name = f"ученика {result[0]}"
-
             bot.edit_message_text(
-                f"Успешно!\n\n"
-                f"Сдано книг: {count}\n"
-                f"За {target_name}",
+                f"Готово!\n\nСдано книг: {count}",
                 call.message.chat.id,
                 call.message.message_id
             )
         else:
             bot.edit_message_text(
-                "Ошибка\n\n"
-                "Не удалось сдать книги. Возможно, их уже нет на руках.",
+                f"Ошибка\n\nНе удалось сдать книги. Возможно, их уже нет на руках.",
                 call.message.chat.id,
-                call.message.message_id,
+                call.message.message_id
             )
         return
 
+    # ===== ОТМЕНА МАССОВОЙ СДАЧИ =====
     if callback_data == "cancel_return_all":
         bot.edit_message_text(
-            "Cдача отменена.",
+            "Сдача отменена.",
             call.message.chat.id,
             call.message.message_id
         )
