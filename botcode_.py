@@ -305,86 +305,44 @@ def handle_update_teacher(message):
 
 @bot.message_handler(commands=['reregistration'])
 def handle_reregistaration(message):
-    """
-    АБСОЛЮТНО УНИВЕРСАЛЬНАЯ команда сброса.
-    Работает в ЛЮБОЙ момент (до регистрации, во время, после).
-    """
+    """Команда сброса регистрации"""
     user_id = message.from_user.id
 
-    # 1. СОХРАНЯЕМ ИНФОРМАЦИЮ (для красивого ответа)
-    user_info = "пользователь"
-    registration_status = "не зарегистрирован"
+    # 1. ОЧИЩАЕМ ВСЕ СОСТОЯНИЯ В ПАМЯТИ
+    states_to_check = {
+        user_waiting_for_data,
+        user_data_temp,
+        user_pending_action,
+        teacher_acting_for,
+        teacher_temp_data
+    }
+    
+    for state_dict in states_to_check:
+        if user_id in state_dict:
+            del state_dict[user_id]
 
-    # 2. ПРОВЕРЯЕМ БАЗУ ДАННЫХ
+    # 2. РАБОТА С БАЗОЙ (УДАЛЯЕМ НЕПОДТВЕРЖДЁННЫХ)
     conn = sqlite3.connect('library.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT FIO, status, permit FROM users WHERE tg_id = ?', (user_id,))
+    cursor.execute('SELECT status, permit FROM users WHERE tg_id = ?', (user_id,))
     user_data = cursor.fetchone()
 
     if user_data:
-        fio, status, permit = user_data
-        user_info = fio
-        registration_status = f"{status} (подтверждён)" if permit else f"{status} (ожидает)"
-
-    # 3. ПОЛНАЯ ОЧИСТКА ВСЕХ СОСТОЯНИЙ (ДАЖЕ ЕСЛИ ИХ НЕТ)
-    cleared_states = []
-
-    # Словарь всех возможных состояний (проверяем все)
-    states_to_check = {
-        'ожидание ввода данных': user_waiting_for_data,
-        'временные данные': user_data_temp,
-        'ожидание QR': user_pending_action,
-        'режим помощи': teacher_acting_for,
-        'выбор ученика': teacher_temp_data
-    }
-
-    for state_name, state_dict in states_to_check.items():
-        if user_id in state_dict:
-            del state_dict[user_id]
-            cleared_states.append(state_name)
-
-    # 4. РАБОТА С БАЗОЙ (ЕСЛИ ПОЛЬЗОВАТЕЛЬ ЕСТЬ)
-    db_action = ""
-
-    if user_data:
-        fio, status, permit = user_data
+        status, permit = user_data
         if not permit and status == 'teacher':
-            # Неподтверждённый учитель - можно удалить
+            # Удаляем только неподтверждённых учителей
             cursor.execute('DELETE FROM users WHERE tg_id = ?', (user_id,))
             conn.commit()
-            db_action = "удалена неподтверждённая заявка учителя"
-            registration_status = "заявка удалена"
-        elif permit:
-            # Подтверждённый пользователь - НЕ удаляем
-            db_action = f"подтверждённый {status} сохранён в БД"
-        else:
-            # Странный случай (на всякий)
-            db_action = f"запись сохранена (status={status}, permit={permit})"
-    else:
-        db_action = "записи в БД не было"
-
+    
     conn.close()
 
-    # 5. ФОРМИРУЕМ ПОНЯТНЫЙ ОТВЕТ
-    response = f"Сброс для {user_info}\n"
-    response += f"Статус: {registration_status}\n\n"
-
-    if cleared_states:
-        response += "Очищено состояний:\n"
-        for state in cleared_states:
-            response += f" {state}\n"
-    else:
-        response += "Активных состояний не было\n"
-
-    response += f"\nБаза данных: {db_action}"
-
-    # 6. ОТПРАВЛЯЕМ РЕЗУЛЬТАТ
+    # 3. ОТПРАВЛЯЕМ КОРОТКОЕ СООБЩЕНИЕ
     bot.send_message(
         message.chat.id,
-        response
+        "Сброс аккаунта выполнен.\nМожете начать регистрацию заново."
     )
 
-    # 7. ВСЕГДА ЗАПУСКАЕМ /start (ДАЖЕ ЕСЛИ НЕ БЫЛО РЕГИСТРАЦИИ)
+    # 4. ЗАПУСКАЕМ /start
     time.sleep(1)
     handle_start(message)
 
