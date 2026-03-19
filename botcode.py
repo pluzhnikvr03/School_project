@@ -441,7 +441,7 @@ def handle_registration_data(message):
     bot.reply_to(message,
                  "Выберите вашу роль:",
                  reply_markup=create_role_keyboard())
-    bot.reply_to(message,
+    bot.send_message(message.chat.id,
                  "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistaration")
 
 
@@ -1026,3 +1026,5 @@ def handle_all_messages(message):
 bot.infinity_polling(timeout=60, long_polling_timeout=60)  # запускаем бота в режиме бесконечного опроса
 # timeout=60 - таймаут на запрос к Telegram
 # long_polling_timeout=60 - максимальное время ожидания ответа
+
+
