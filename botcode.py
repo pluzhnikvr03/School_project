@@ -299,52 +299,48 @@ def handle_update_teacher(message):
         bot.reply_to(message, "Telegram ID можно узнать у бота @userinfobot или посмотреть в профиле")
 
 
-@bot.message_handler(commands=['reregistaration'])
+@bot.message_handler(commands=['reregistration'])
 def handle_reregistaration(message):
-    """
-    Полный сброс состояния пользователя.
-    Позволяет начать регистрацию заново, если что-то зависло.
-    """
+    """Команда сброса регистрации"""
     user_id = message.from_user.id
 
-    # Очищаем все состояния пользователя
-    cleared = []
+    # ОЧИЩАЕМ ВСЕ СОСТОЯНИЯ В ПАМЯТИ
+    states_to_check = {
+        user_waiting_for_data,
+        user_data_temp,
+        user_pending_action,
+        teacher_acting_for,
+        teacher_temp_data
+    }
+    
+    for state_dict in states_to_check:
+        if user_id in state_dict:
+            del state_dict[user_id]
 
-    if user_id in user_waiting_for_data:
-        del user_waiting_for_data[user_id]
-        cleared.append("ожидание данных")
+    # РАБОТА С БАЗОЙ (УДАЛЯЕМ НЕПОДТВЕРЖДЁННЫХ)
+    conn = sqlite3.connect('library.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT status, permit FROM users WHERE tg_id = ?', (user_id,))
+    user_data = cursor.fetchone()
 
-    if user_id in user_data_temp:
-        del user_data_temp[user_id]
-        cleared.append("временные данные")
+    if user_data:
+        status, permit = user_data
+        if not permit and status == 'teacher':
+            # Удаляем только неподтверждённых учителей
+            cursor.execute('DELETE FROM users WHERE tg_id = ?', (user_id,))
+            conn.commit()
+    
+    conn.close()
 
-    if user_id in user_pending_action:
-        del user_pending_action[user_id]
-        cleared.append("ожидание QR")
-
-    if user_id in teacher_acting_for:
-        del teacher_acting_for[user_id]
-        cleared.append("режим помощи")
-
-    if user_id in teacher_temp_data:
-        del teacher_temp_data[user_id]
-        cleared.append("выбор ученика")
-
-    # Формируем сообщение о результате
-    if cleared:
-        result_text = f"Сброшены состояния: {', '.join(cleared)}.\n\nТеперь можете начать заново с команды /start"
-    else:
-        result_text = "У вас не было активных состояний. Можете нажимать /start"
-
-    # Отправляем результат и сразу запускаем регистрацию
+    # ОТПРАВЛЯЕМ КОРОТКОЕ СООБЩЕНИЕ
     bot.send_message(
         message.chat.id,
-        result_text
+        "Сброс аккаунта выполнен.\nМожете начать регистрацию заново."
     )
 
-    # Автоматически запускаем /start
+    # ЗАПУСКАЕМ /start
+    time.sleep(1)
     handle_start(message)
-
 
 @bot.message_handler(commands=['import_books'])
 def handle_import_books(message):
