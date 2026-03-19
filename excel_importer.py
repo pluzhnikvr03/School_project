@@ -128,6 +128,7 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
             result['copies'] += copies  # увеличиваем счётчик экземпляров
             print(f"\nКнига: {book['subject']} ({book['class']} класс), экз.: {copies}")
 
+            new_qrs = 0  # счётчик реально созданных QR-кодов для этой книги
             # цикл для создания QR-кода для каждого отдельного экземпляра
             for copy_num in range(1, copies + 1):
                 # генерация уникального QR-кода
@@ -137,46 +138,26 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                 qr_code = f"{subject_code}-{book['class']}-{copy_num:03d}"
                 # {copy_num:03d} означает, что номер экземпляра будет трёхзначным (001 - 999)
 
-                new_qrs = 0  # счётчик реально созданных QR-кодов для этой книги
-                for copy_num in range(1, copies + 1):
-                    subject_code = book['subject'][:4].upper().replace(' ', '_')
-                    qr_code = f"{subject_code}-{book['class']}-{copy_num:03d}"
-                    # проверяем, есть ли уже
-                    cursor.execute('SELECT id FROM books WHERE qr_code = ?', (qr_code,))
-                    if cursor.fetchone():
-                        continue  # молча пропускаем
-                    try:
-                        cursor.execute('''
-                            INSERT INTO books (qr_code, subject, author, year, class)
-                            VALUES (?, ?, ?, ?, ?)
-                        ''', (qr_code, book['subject'], book['author'], book['year'], book['class']))
-                        generate_qr_for_book(qr_code)
-                        new_qrs += 1
-                        result['qrcodes'] += 1
-                    except sqlite3.IntegrityError:
-                        continue
-
-                # после цикла показываем итог по книге
-                if new_qrs == 0:
-                    print(f"Все {copies} QR-кодов уже существуют")
-                else:
-                    print(f"Создано {new_qrs} новых QR-кодов (из {copies})")
-
-
-                try:  # пытаемся добавить книги в базу данных и сгенерировать QR-коды
-                    # добавляем книгу в базу данных (SQL-запрос на добавление новой записи в таблицу books)
+                cursor.execute('SELECT id FROM books WHERE qr_code = ?', (qr_code,))
+                if cursor.fetchone():
+                    continue  # молча пропускаем
+                try:
                     cursor.execute('''
-                        INSERT INTO books (qr_code, subject, author, year, class)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (qr_code, book['subject'], book['author'], book['year'], book['class']))
+                    INSERT INTO books (qr_code, subject, author, year, class, copies)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (qr_code, book['subject'], book['author'], book['year'], book['class'], copies))
+                    generate_qr_for_book(qr_code)
+                    new_qrs += 1
+                    result['qrcodes'] += 1
 
-                    # генерируем QR-код с логотипом
-                    generate_qr_for_book(qr_code)  # вызываем функцию, которая создаёт картинку с QR-кодом и сохраняет её в папку
-                    result['qrcodes'] += 1  # увеличиваем счётчик QR-кодов
-
-                except sqlite3.IntegrityError:  # если такой QR-код уже есть в базе — пропускаем
-                    print(f"QR {qr_code} уже существует")
+                except sqlite3.IntegrityError:
                     continue
+
+            # после цикла показываем итог по книге
+            if new_qrs == 0:
+                print(f"Все {copies} QR-кодов уже существуют")
+            else:
+                print(f"Создано {new_qrs} новых QR-кодов (из {copies})")
 
         conn.commit()  # сохраняем все изменения в базе данных
         conn.close()  # закрываем соединение
