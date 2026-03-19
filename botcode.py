@@ -712,6 +712,63 @@ def handle_inline_buttons(call):
         )
         return
 
+
+    # ===== МАССОВАЯ СДАЧА КНИГ =====
+    if callback_data.startswith("return_all_"):
+        # Проверяем, что кнопку нажал учитель
+        if get_user_status(user_id) != 'teacher':
+            bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
+            return
+
+        # Извлекаем ID ученика (или учителя), за которого сдаём книги
+        target_id = int(callback_data.replace("return_all_", ""))
+
+        # Спрашиваем подтверждение
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{target_id}"),
+            types.InlineKeyboardButton("Отмена", callback_data="cancel_return_all")
+        )
+
+        bot.edit_message_text(
+            f"Подтверждение\n\nВы уверены, что хотите сдать ВСЕ книги?",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard
+        )
+        return
+
+    # ===== ПОДТВЕРЖДЕНИЕ МАССОВОЙ СДАЧИ =====
+    if callback_data.startswith("confirm_return_all_"):
+        # Извлекаем ID ученика, за которого сдаём
+        target_id = int(callback_data.replace("confirm_return_all_", ""))
+
+        # Вызываем функцию массового возврата из database.py
+        success, count = return_all_books(target_id)
+
+        if success:
+            bot.edit_message_text(
+                f"Готово!\n\nСдано книг: {count}",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                f"Ошибка\n\nНе удалось сдать книги. Возможно, их уже нет на руках.",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        return
+
+    # ===== ОТМЕНА МАССОВОЙ СДАЧИ =====
+    if callback_data == "cancel_return_all":
+        bot.edit_message_text(
+            "Сдача отменена.",
+            call.message.chat.id,
+            call.message.message_id
+        )
+        return
+
     # ===== ВЗЯТИЕ КНИГИ =====
     if callback_data.startswith("take_"):
         qr_code = callback_data.replace("take_", "")  # извлекаем QR-код
@@ -844,62 +901,6 @@ def handle_inline_buttons(call):
         )
 
         bot.answer_callback_query(call.id)  # отвечаем на callback
-        return
-
-    # ===== МАССОВАЯ СДАЧА КНИГ =====
-    if callback_data.startswith("return_all_"):
-        # Проверяем, что кнопку нажал учитель
-        if get_user_status(user_id) != 'teacher':
-            bot.answer_callback_query(call.id, "Только учителя могут сдавать книги!")
-            return
-
-        # Извлекаем ID ученика (или учителя), за которого сдаём книги
-        target_id = int(callback_data.replace("return_all_", ""))
-
-        # Спрашиваем подтверждение
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            types.InlineKeyboardButton("Да, сдать всё", callback_data=f"confirm_return_all_{target_id}"),
-            types.InlineKeyboardButton("Отмена", callback_data="cancel_return_all")
-        )
-
-        bot.edit_message_text(
-            f"Подтверждение\n\nВы уверены, что хотите сдать ВСЕ книги?",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=keyboard
-        )
-        return
-
-    # ===== ПОДТВЕРЖДЕНИЕ МАССОВОЙ СДАЧИ =====
-    if callback_data.startswith("confirm_return_all_"):
-        # Извлекаем ID ученика, за которого сдаём
-        target_id = int(callback_data.replace("confirm_return_all_", ""))
-
-        # Вызываем функцию массового возврата из database.py
-        success, count = return_all_books(target_id)
-
-        if success:
-            bot.edit_message_text(
-                f"Готово!\n\nСдано книг: {count}",
-                call.message.chat.id,
-                call.message.message_id
-            )
-        else:
-            bot.edit_message_text(
-                f"Ошибка\n\nНе удалось сдать книги. Возможно, их уже нет на руках.",
-                call.message.chat.id,
-                call.message.message_id
-            )
-        return
-
-    # ===== ОТМЕНА МАССОВОЙ СДАЧИ =====
-    if callback_data == "cancel_return_all":
-        bot.edit_message_text(
-            "Сдача отменена.",
-            call.message.chat.id,
-            call.message.message_id
-        )
         return
 
 
