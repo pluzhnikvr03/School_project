@@ -412,6 +412,7 @@ def handle_get_pdf(message):
         # редактируем сообщение "Создаю PDF..." и заменяем его на ошибку
         bot.edit_message_text(f"Ошибка: {e}", msg.chat.id, msg.message_id)
 
+
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
 
 @bot.message_handler(func=lambda message: user_waiting_for_data.get(message.from_user.id, False))
