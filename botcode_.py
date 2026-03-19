@@ -149,15 +149,7 @@ def handle_my_books(message):
     # Если учитель в режиме помощи — показываем книги ученика
     if user_id in teacher_acting_for:
         target_id = teacher_acting_for[user_id]  # ID ученика
-        
-        # Получаем ФИО ученика для красивого сообщения
-        conn = sqlite3.connect('library.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT FIO FROM users WHERE tg_id = ?', (target_id,))
-        result = cursor.fetchone()
-        conn.close()
-        
-        target_name = f"ученика {result[0]}" if result else "выбранного ученика"
+        target_name = "выбранного ученика"
     else:
         # Если не в режиме помощи — показываем свои книги
         target_id = user_id
