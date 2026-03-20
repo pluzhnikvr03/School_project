@@ -155,6 +155,18 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                     # берем из строки (row) значение в колонке, имя которой мы сохранили в class_col
                     # превращаем это значение в строку и убираем лишние пробелы в начале и конце
 
+                    # ИЗВЛЕКАЕМ ЧАСТЬ УЧЕБНИКА (ч.1, ч.2, часть 1, часть 2 и т.д.), если есть
+                    part = ''
+                    author_lower = author.lower()
+                    if 'ч.1' in author_lower or 'ч. 1' in author_lower or 'часть 1' in author_lower or 'ч.1' in author_lower:
+                        part = '1'
+                    elif 'ч.2' in author_lower or 'ч. 2' in author_lower or 'часть 2' in author_lower or 'ч.2' in author_lower:
+                        part = '2'
+                    elif 'ч.3' in author_lower or 'ч. 3' in author_lower or 'часть 3' in author_lower:
+                        part = '3'
+                    elif 'ч.4' in author_lower or 'ч. 4' in author_lower or 'часть 4' in author_lower:
+                        part = '4'
+
                     # пытаемся получить количество экземпляров
                     count = 0
                     if sheet_name in ['1-4', '5-9', '10-11']:
@@ -175,8 +187,13 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
 
                     # проверяем, есть ли осмысленные данные
                     if count > 0 and subject and class_num:
-                        # создаём уникальный ключ для группировки (БЕЗ АВТОРА!)
-                        key = f"{class_num}|{subject}|{year}"
+                        # ОЧИЩАЕМ АВТОРА (убираем лишние пробелы, приводим к нижнему регистру)
+                        author_clean = ' '.join(author.lower().split())
+                        # БЕРЁМ ПЕРВЫЕ 50 СИМВОЛОВ АВТОРА (чтобы не было слишком длинно)
+                        author_short = author_clean[:50]
+
+                        # создаём уникальный ключ для группировки
+                        key = f"{class_num}|{subject.lower()}|{author_short}|{part}|{year}"
 
                         if key in books_dict:
                             books_dict[key]['count'] += count
@@ -186,6 +203,7 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                                 'subject': subject,
                                 'author': author,
                                 'year': year,
+                                'part': part,
                                 'count': count
                             }
 
@@ -214,9 +232,16 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                 # генерация уникального QR-кода
                 # берём первые 4 буквы предмета
                 subject_code = book['subject'][:4].upper().replace(' ', '_')
-                # формируем код: ПРЕДМЕТ-КЛАСС-НОМЕР_ЭКЗЕМПЛЯРА
-                qr_code = f"{subject_code}-{book['class']}-{copy_num:03d}"
-                # {copy_num:03d} означает, что номер экземпляра будет трёхзначным (001 - 999)
+                # КОД АВТОРА (первые 3 буквы фамилии)
+                author_parts = book['author'].split()
+                author_code = author_parts[0][:3].upper() if author_parts else 'XXX'
+                # КОД ЧАСТИ (если есть)
+                part_code = f"P{book['part']}" if book.get('part') else 'P0'
+
+                # формируем код: ПРЕДМЕТ-КЛАСС-АВТОР-ЧАСТЬ-ГОД-НОМЕР
+                qr_code = f"{subject_code}-{book['class']}-{author_code}-{part_code}-{book['year']}-{copy_num:03d}"
+                # Например: ЛИТЕ-8-KOР-P1-2021-001 (часть 1)
+                #           ЛИТЕ-8-KOР-P2-2021-001 (часть 2)
 
                 cursor.execute('SELECT id FROM books WHERE qr_code = ?', (qr_code,))
                 if cursor.fetchone():
@@ -250,20 +275,10 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
 
 
 # функция создания PDF с QR-кодами
-def create_qr_pdf(output_filename="qrcodes.pdf"):
+def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
     """
     Создаёт PDF с QR-кодами по 30 штук на листе A4
     """
-    print(f"СОЗДАЮ PDF: {output_filename}")
-    print(f"Папка qrcodes существует: {os.path.exists('qrcodes')}")
-    if os.path.exists('qrcodes'):
-        files = os.listdir('qrcodes')
-        print(f"Файлов в папке: {len(files)}")
-        if files:
-            print(f"Первые 5 файлов: {files[:5]}")
-    else:
-        print("Папки qrcodes НЕТ!")
-        return None
     # создаем PDF документ
     # canvas - "холст", на котором мы будем рисовать
     # pagesize=A4 - устанавливаем размер страницы как стандартный лист A4
@@ -292,7 +307,9 @@ def create_qr_pdf(output_filename="qrcodes.pdf"):
     # получаем список всех QR-кодов
     # проверяем, существует ли папка qrcodes
     if not os.path.exists('qrcodes'):
-        return None  # если папки нет - выходим
+        if progress_callback:  # сообщаем об ошибке
+            progress_callback("error", "Папка qrcodes/ не найдена")
+        return None  # папки нет - выходим
 
     # получаем список всех файлов в папке qrcodes
     all_files = os.listdir('qrcodes')
@@ -312,15 +329,23 @@ def create_qr_pdf(output_filename="qrcodes.pdf"):
 
     # если нет ни одного QR-кода - выходим
     if not qr_files:
+        if progress_callback:  # сообщаем об ошибке
+            progress_callback("error", "Нет QR-кодов для создания PDF")
         return None
 
     # суммарное количество QR-кодов
     total_qrs = len(qr_files)
 
+    if progress_callback:  # сообщаем о начале
+        progress_callback("start", total_qrs)
+
     # вычисляем количество страниц
     # (total_qrs + кол-во на странице - 1) // кол-во на странице
     # формула округляет результат вверх (н-р: 31 // 30 = 2 страницы)
     pages = (total_qrs + cols * rows - 1) // (cols * rows)
+
+    # счетчик обработанных QR-кодов для прогресса
+    processed = 0
 
     # создаем каждую страницу
     # page = 0, 1, 2... пока не сделаем все страницы
@@ -328,9 +353,6 @@ def create_qr_pdf(output_filename="qrcodes.pdf"):
         # верхняя часть(ставим дату для удобства)
         # пишем дату создания (чтобы легче отличать версии)
         c.setFont("Helvetica", 8)
-        print(f"  Сейчас будем использовать datetime: {datetime}")
-        print(f"  Тип datetime: {type(datetime)}")
-        print(f"  Сам datetime: {datetime}")
         current_date = datetime.now().strftime('%d.%m.%Y')
         c.drawString(width - 100, height - 20, f"от {current_date}")
 
@@ -394,6 +416,14 @@ def create_qr_pdf(output_filename="qrcodes.pdf"):
             # рисуем текст под QR-кодом (y - 8 означает на 8 pt ниже QR)
             c.drawString(x, y - 8, code_name)
 
+            # увеличиваем счетчик
+            processed += 1
+
+            # вызываем callback для прогресса (каждые 5%)
+            if progress_callback and processed % max(1, total_qrs // 20) == 0:  # ← НОВОЕ: прогресс каждые 5%
+                percent = int(processed / total_qrs * 100)
+                progress_callback("progress", percent, processed, total_qrs)
+
         # переход к новой странице
         # если это не последняя страница, создаём новую
         if page < pages - 1:
@@ -401,6 +431,8 @@ def create_qr_pdf(output_filename="qrcodes.pdf"):
 
     # сохраняем PDF-файл
     c.save()
+    if progress_callback:  # сообщаем о завершении
+        progress_callback("complete", output_filename)
 
     # возвращаем имя созданного файла
     return output_filename
