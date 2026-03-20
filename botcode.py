@@ -5,7 +5,12 @@ from database import *  # импортируем все функции из data
 import excel_importer  # импортируем файл, который автоматически заносит книги в базу данных из Excel-файла
 import os  # библиотека для работы с файлами
 from datetime import datetime
+import threading  # библиотека для параллельного выполнения (бот и отвечает, и параллельно генерирует PDF)
+import time  # библиотека для управления временными интервалами (не спамить Telegram обновлениями)
+import zipfile  # библиотека для создания ZIP-архивов
 
+# Словарь для отслеживания статуса генерации PDF
+pdf_generation_status = {}  # {chat_id: {'status': 'processing', ...}}
 
 create_database()  # создаем базу данных при запуске (таблицы создадутся, если их нет)
 
@@ -64,6 +69,66 @@ def create_confirm_keyboard(teacher_id):
         # при нажатии вернется "reject_IDучителя"
     )
     return keyboard
+
+
+# ========== ФУНКЦИЯ ДЛЯ ФОНОВОЙ ГЕНЕРАЦИИ PDF И ZIP ==========
+
+def generate_pdf_thread(chat_id, msg_id, filename):
+    """Генерирует PDF и упаковывает в ZIP"""
+    try:
+        # Функция для обновления прогресса
+        def update_progress(status, *args):
+            try:
+                if status == "progress":
+                    percent = args[0]
+                    bot.edit_message_text(
+                        f"📄 Создаю PDF... {percent}%",
+                        chat_id,
+                        msg_id
+                    )
+                elif status == "complete":
+                    # PDF готов - теперь архивируем
+                    bot.edit_message_text(
+                        f"📦 Упаковываю в ZIP...",
+                        chat_id,
+                        msg_id
+                    )
+
+                    # Создаём ZIP-архив
+                    zip_filename = filename.replace('.pdf', '.zip')
+                    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        zipf.write(filename, arcname=os.path.basename(filename))
+
+                    # Удаляем исходный PDF
+                    os.remove(filename)
+
+                    # Отправляем ZIP
+                    with open(zip_filename, 'rb') as f:
+                        bot.send_document(
+                            chat_id,
+                            f,
+                            caption=f"📚 QR-коды в ZIP",
+                            timeout=300
+                        )
+
+                    # Удаляем ZIP
+                    os.remove(zip_filename)
+                    bot.delete_message(chat_id, msg_id)
+
+                elif status == "error":
+                    error_msg = args[0]
+                    bot.edit_message_text(f"❌ Ошибка: {error_msg}", chat_id, msg_id)
+            except Exception as e:
+                print(f"Ошибка обновления: {e}")
+
+        # Вызываем функцию создания PDF с callback'ом
+        excel_importer.create_qr_pdf(filename, update_progress)
+
+    except Exception as e:
+        try:
+            bot.edit_message_text(f"❌ Ошибка: {str(e)[:200]}", chat_id, msg_id)
+        except:
+            pass
 
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
@@ -171,10 +236,10 @@ def handle_my_books(message):
         text = f"КНИГИ {target_name.upper()}:\n\n"
     else:
         text = "ВАШИ КНИГИ:\n\n"
-        
+
     for book in books:
-        subject = book[0]          # Название книги
-        issue_date = book[3]        # Дата выдачи
+        subject = book[0]  # Название книги
+        issue_date = book[3]  # Дата выдачи
         text += f"{subject}\nВзята: {issue_date}\n\n"
 
     # ===== КНОПКА ДЛЯ УЧИТЕЛЯ (МАССОВАЯ СДАЧА) =====
@@ -182,7 +247,7 @@ def handle_my_books(message):
     if user_status == 'teacher':  # только для учителей
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(
-            "Сдать все книги", 
+            "Сдать все книги",
             callback_data=f"return_all_{target_id}"
         ))
 
@@ -192,6 +257,7 @@ def handle_my_books(message):
         text,
         reply_markup=keyboard
     )
+
 
 @bot.message_handler(commands=['help'])
 def handle_act_start(message):
@@ -333,7 +399,7 @@ def handle_reregistration(message):
             # Удаляем только неподтверждённых учителей
             cursor.execute('DELETE FROM users WHERE tg_id = ?', (user_id,))
             conn.commit()
-    
+
     conn.close()
 
     # ОТПРАВЛЯЕМ КОРОТКОЕ СООБЩЕНИЕ
@@ -345,6 +411,7 @@ def handle_reregistration(message):
     # ЗАПУСКАЕМ /start
     time.sleep(1)
     handle_start(message)
+
 
 @bot.message_handler(commands=['import_books'])
 def handle_import_books(message):
@@ -372,49 +439,25 @@ def handle_get_pdf(message):
     # os.path.exists('qrcodes') — True, если папка есть
     # len(os.listdir('qrcodes')) — количество файлов в папке
     if not os.path.exists('qrcodes') or len(os.listdir('qrcodes')) == 0:
-        bot.reply_to(message, "Папка qrcodes/ пуста. Сначала импортируйте книги.\nДля этого используйте команду /import_books")
+        bot.reply_to(message,
+                     "Папка qrcodes/ пуста. Сначала импортируйте книги.\nДля этого используйте команду /import_books")
         return
 
     #  отправляем первое сообщение, чтобы пользователь знал, что бот работает
     # сохраняем это сообщение в переменную msg, чтобы потом его отредактировать
-    msg = bot.reply_to(message, "Создаю PDF...")
+    msg = bot.reply_to(message, "Создаю PDF... 0%")
 
-    try:
-        # создаем имя файла
-        # datetime.now().strftime('%Y%m%d') — текущая дата в формате ГГГГММДД
-        # например: 20260318.pdf
-        pdf_filename = f"qrcodes_{datetime.now().strftime('%Y%m%d')}.pdf"
+    # создаем имя файла
+    # datetime.now().strftime('%Y%m%d') — текущая дата в формате ГГГГММДД
+    # например: 20260318.pdf
+    pdf_filename = f"qrcodes_{datetime.now().strftime('%Y%m%d')}.pdf"
 
-        # вызываем функцию создания PDF-файла
-        # функция лежит в файле excel_importer.py
-        # она создаст PDF с QR-кодами и сохранит его под именем pdf_filename
-        excel_importer.create_qr_pdf(pdf_filename)
-
-        # отправляем PDF пользователю
-        # открываем созданный файл для чтения в бинарном режиме ('rb')
-        with open(pdf_filename, 'rb') as f:
-            # отправляем файл как документ
-            # chat.id — чат, куда отправляем
-            # f — открытый файл
-            # caption — подпись под файлом
-            bot.send_document(
-                message.chat.id,
-                f,
-                caption=f"QR-коды для печати"  # подпись под файлом
-            )
-
-        # удаляем временный PDF-файл, чтобы не засорять папку
-        os.remove(pdf_filename)
-
-        # удаляем предыдущее сообщение "Создаю PDF..."
-        # чтобы в чате остался только сам файл, а не куча служебных сообщений
-        bot.delete_message(msg.chat.id, msg.message_id)
-
-    except Exception as e:  # при любой ошибке
-        # перехватываем ошибку и показываем её пользователю
-        # e — объект ошибки
-        # редактируем сообщение "Создаю PDF..." и заменяем его на ошибку
-        bot.edit_message_text(f"Ошибка: {e}", msg.chat.id, msg.message_id)
+    thread = threading.Thread(
+        target=generate_pdf_thread,
+        args=(message.chat.id, msg.message_id, pdf_filename)
+    )
+    thread.daemon = True
+    thread.start()
 
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
@@ -457,7 +500,7 @@ def handle_registration_data(message):
                  "Выберите вашу роль:",
                  reply_markup=create_role_keyboard())
     bot.send_message(message.chat.id,
-                 "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistration")
+                     "Если бот не отвечает, начните регистрацию заново.\nДля этого выберите команду /reregistration")
 
 
 # ========== ОБРАБОТЧИКИ INLINE-КНОПОК ==========
@@ -599,7 +642,6 @@ def handle_inline_buttons(call):
         )
         return
 
-
     # ===== КНОПКИ ПОДТВЕРЖДЕНИЯ УЧИТЕЛЯ =====
     if callback_data.startswith("confirm_") or callback_data.startswith("reject_"):
         admin_id = call.from_user.id
@@ -711,7 +753,6 @@ def handle_inline_buttons(call):
             call.message.message_id
         )
         return
-
 
     # ===== МАССОВАЯ СДАЧА КНИГ =====
     if callback_data.startswith("return_all_"):
@@ -928,9 +969,10 @@ def handle_document(message):
         file_info = bot.get_file(message.document.file_id)
         # скачиваем файл
         downloaded_file = bot.download_file(file_info.file_path)
-        filename = "temporary_books.xlsx"   # временное имя файла
+        filename = "temporary_books.xlsx"  # временное имя файла
         with open(filename, 'wb') as f:  # открываем файл для записи в бинарном режиме
-            f.write(downloaded_file)     # записываем скачанные данные (на диск, т.к. скрипт excel_importer.py не умеет читать файлы из памяти — ему нужен физический файл на диске)
+            f.write(
+                downloaded_file)  # записываем скачанные данные (на диск, т.к. скрипт excel_importer.py не умеет читать файлы из памяти — ему нужен физический файл на диске)
 
         # сообщаем, что файл получен и началась обработка
         bot.edit_message_text("Файл получен. Начинаю обработку. Это может занять несколько минут.",
@@ -1015,8 +1057,6 @@ def handle_all_messages(message):
 
 # ========== ЗАПУСК БОТА ==========
 
-bot.infinity_polling(timeout=60, long_polling_timeout=60)  # запускаем бота в режиме бесконечного опроса
-# timeout=60 - таймаут на запрос к Telegram
-# long_polling_timeout=60 - максимальное время ожидания ответа
-
-
+bot.infinity_polling(timeout=120, long_polling_timeout=120)  # запускаем бота в режиме бесконечного опроса
+# timeout=120 - таймаут на запрос к Telegram
+# long_polling_timeout=120 - максимальное время ожидания ответа
