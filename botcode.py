@@ -43,7 +43,7 @@ def create_book_action_keyboard(qr_code, user_status):
     - Для учеников: только «Взять» и «Кому принадлежит?»
     - Для учителей: все три кнопки (включая «Вернуть»)
     """
-    keyboard = types.InlineKeyboardMarkup(row_width=2)  # создаем клавиатуру с двумя кнопками в ряду
+    keyboard = types.InlineKeyboardMarkup(row_width=1)  # создаем клавиатуру с двумя кнопками в ряду
 
     # Кнопки, доступные всем
     buttons = [
@@ -82,14 +82,14 @@ def generate_pdf_thread(chat_id, msg_id, filename):
                 if status == "progress":
                     percent = args[0]
                     bot.edit_message_text(
-                        f"📄 Создаю PDF... {percent}%",
+                        f"Создаю PDF... {percent}%",
                         chat_id,
                         msg_id
                     )
                 elif status == "complete":
                     # PDF готов - теперь архивируем
                     bot.edit_message_text(
-                        f"📦 Упаковываю в ZIP...",
+                        f"Упаковываю в ZIP...",
                         chat_id,
                         msg_id
                     )
@@ -107,7 +107,7 @@ def generate_pdf_thread(chat_id, msg_id, filename):
                         bot.send_document(
                             chat_id,
                             f,
-                            caption=f"📚 QR-коды в ZIP",
+                            caption=f"QR-коды в ZIP",
                             timeout=300
                         )
 
@@ -117,7 +117,7 @@ def generate_pdf_thread(chat_id, msg_id, filename):
 
                 elif status == "error":
                     error_msg = args[0]
-                    bot.edit_message_text(f"❌ Ошибка: {error_msg}", chat_id, msg_id)
+                    bot.edit_message_text(f"Ошибка: {error_msg}", chat_id, msg_id)
             except Exception as e:
                 print(f"Ошибка обновления: {e}")
 
@@ -126,7 +126,7 @@ def generate_pdf_thread(chat_id, msg_id, filename):
 
     except Exception as e:
         try:
-            bot.edit_message_text(f"❌ Ошибка: {str(e)[:200]}", chat_id, msg_id)
+            bot.edit_message_text(f"Ошибка: {str(e)[:200]}", chat_id, msg_id)
         except:
             pass
 
@@ -265,7 +265,7 @@ def handle_act_start(message):
     user_id = message.from_user.id
 
     # Проверяем, что это учитель
-    if get_user_status(user_id) != 'teacher':
+    if get_user_status(user_id) != 'teacher' or not check_user_permit(user_id):
         bot.reply_to(message, "Эта команда только для учителей!")
         return
 
@@ -813,6 +813,16 @@ def handle_inline_buttons(call):
     # ===== ВЗЯТИЕ КНИГИ =====
     if callback_data.startswith("take_"):
         qr_code = callback_data.replace("take_", "")  # извлекаем QR-код
+        if not check_user_permit(user_id):
+            info_text = 'Дождитесь подтверждения заявки!'
+            bot.edit_message_text(
+                info_text,
+                call.message.chat.id,
+                call.message.message_id
+            )
+
+            bot.answer_callback_query(call.id)  # отвечаем на callback
+            return
 
         # Определяем, от чьего имени брать книгу (учитель или ученик)
         acting_user_id = teacher_acting_for.get(user_id,
@@ -844,6 +854,16 @@ def handle_inline_buttons(call):
     # ===== ВОЗВРАТ КНИГИ =====
     if callback_data.startswith("return_"):
         qr_code = callback_data.replace("return_", "")  # извлекаем QR-код
+        if not check_user_permit(user_id):
+            info_text = 'Дождитесь подтверждения заявки!'
+            bot.edit_message_text(
+                info_text,
+                call.message.chat.id,
+                call.message.message_id
+            )
+
+            bot.answer_callback_query(call.id)  # отвечаем на callback
+            return
 
         acting_user_id = teacher_acting_for.get(user_id, user_id)  # определяем, от чьего имени возвращать
 
@@ -874,7 +894,16 @@ def handle_inline_buttons(call):
     # ===== КНОПКА "КОМУ ПРИНАДЛЕЖИТ?" =====
     if callback_data.startswith("who_"):
         qr_code = callback_data.replace("who_", "")  # извлекаем QR-код
+        if not check_user_permit(user_id):
+            info_text = 'Дождитесь подтверждения заявки!'
+            bot.edit_message_text(
+                info_text,
+                call.message.chat.id,
+                call.message.message_id
+            )
 
+            bot.answer_callback_query(call.id)  # отвечаем на callback
+            return
         # Получаем информацию о владельце книги
         owner = get_book_owner_info(qr_code)  # вызываем функцию из database.py
         user_status = get_user_status(user_id)  # 'student' или 'teacher'
