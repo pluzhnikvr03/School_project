@@ -7,7 +7,7 @@ import os  # библиотека для работы с файлами
 from datetime import datetime
 import threading  # библиотека для параллельного выполнения (бот и отвечает, и параллельно генерирует PDF)
 import time  # библиотека для управления временными интервалами (не спамить Telegram обновлениями)
-import zipfile  # библиотека для создания ZIP-архивов
+import requests  # библиотека для загрузки файла на временное облако
 
 # Словарь для отслеживания статуса генерации PDF
 pdf_generation_status = {}  # {chat_id: {'status': 'processing', ...}}
@@ -71,10 +71,41 @@ def create_confirm_keyboard(teacher_id):
     return keyboard
 
 
-# ========== ФУНКЦИЯ ДЛЯ ФОНОВОЙ ГЕНЕРАЦИИ PDF И ZIP ==========
+def upload_to_tempfile(file_path):   # file_path - путь к файлу, который нужно загрузить
+    # 0x0.st — бесплатный сервис без регистрации. Файлы хранятся несколько месяцев. не требует API-ключа, работает через обычный POST-запрос.
+    # Адрес сервера для загрузки файлов (0x0.st — простой и надёжный аналог tmp.ninja)
+    url = "https://0x0.st"
+
+    try:
+        # Открываем файл в бинарном режиме ('rb' — read binary)
+        # with open автоматически закроет файл после выхода из блока
+        with open(file_path, "rb") as f:
+            # Отправляем POST-запрос на сервер
+            # files={"file": f} — передаём файл с ключом "file" (сервер ожидает именно такое имя поля)
+            resp = requests.post(url, files={"file": f})
+
+        # Если сервер вернул статус 200 OK — загрузка успешна
+        if resp.status_code == 200:
+            # Сервер возвращает прямую ссылку на файл в виде текста (например, "https://0x0.st/xyz123")
+            # .strip() убирает лишние пробелы и переводы строк
+            return resp.text.strip()
+        else:
+            print(f"Ошибка 0x0.st: статус {resp.status_code}")
+            return None
+
+    except Exception as e:
+        # Если произошла любая ошибка (нет интернета, сервер не отвечает, файл не найден и т.п.)
+        # выводим сообщение в консоль для отладки
+        print(f"Ошибка загрузки на 0x0.st: {e}")
+
+        # Возвращаем None, чтобы вызывающий код понял, что загрузка не удалась
+        return None
+
+
+# ========== ФУНКЦИЯ ДЛЯ ФОНОВОЙ ГЕНЕРАЦИИ PDF ==========
 
 def generate_pdf_thread(chat_id, msg_id, filename):
-    """Генерирует PDF и упаковывает в ZIP"""
+    """Генерирует PDF и отправляет на временное хранилище"""
     try:
         # Функция для обновления прогресса
         def update_progress(status, *args):
@@ -88,32 +119,28 @@ def generate_pdf_thread(chat_id, msg_id, filename):
                     )
                 elif status == "complete":
                     # PDF готов - теперь архивируем
-                    bot.edit_message_text(
-                        f"Упаковываю в ZIP...",
-                        chat_id,
-                        msg_id
-                    )
+                    bot.edit_message_text("Загружаю PDF на сервер...", chat_id, msg_id)
 
-                    # Создаём ZIP-архив
-                    zip_filename = filename.replace('.pdf', '.zip')
-                    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                        zipf.write(filename, arcname=os.path.basename(filename))
+                    # Загружаем PDF на временное облако
+                    download_link = upload_to_tempfile(filename)
 
-                    # Удаляем исходный PDF
+                    # Удаляем временный PDF
                     os.remove(filename)
 
-                    # Отправляем ZIP
-                    with open(zip_filename, 'rb') as f:
-                        bot.send_document(
+                    if download_link:
+                        bot.edit_message_text(
+                            f"PDF готов! Скачать: {download_link}\n\n"
+                            f"Ссылка действительна несколько дней.",
                             chat_id,
-                            f,
-                            caption=f"QR-коды в ZIP",
-                            timeout=300
+                            msg_id
                         )
-
-                    # Удаляем ZIP
-                    os.remove(zip_filename)
-                    bot.delete_message(chat_id, msg_id)
+                        bot.delete_message(chat_id, msg_id)
+                    else:
+                        bot.edit_message_text(
+                            "Не удалось загрузить PDF. Попробуй ещё раз.",
+                            chat_id,
+                            msg_id
+                        )
 
                 elif status == "error":
                     error_msg = args[0]
