@@ -34,11 +34,21 @@ def generate_qr_for_book(book_info,
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    # создаём QR-код с высоким уровнем коррекции (для возможности добавить логотип)
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H)  # создаём QR-код, который сможет восстановиться, даже если до 30% его площади будет испорчено (закрыто логотипом)
-    qr.add_data(link)  # кладём внутрь QR-кода ссылку на tg-бота
-    qr.make(fit=True)  # программа автоматически подбирает минимальный размер QR-кода, в который поместятся все наши данные
-    img = qr.make_image(fill_color="black", back_color="white").convert('RGB')  # создаем картинку QR-кода
+    # Увеличиваем разрешение QR-кода
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=12,  # увеличили с 8-10 до 12 (чем больше, тем чётче)
+        border=2  # небольшой отступ
+    )
+    qr.add_data(link)
+    qr.make(fit=True)
+
+    # Создаём изображение с высоким качеством
+    img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
+
+    # Увеличиваем размер для лучшей печати (опционально)
+    img = img.resize((800, 800), Image.Resampling.LANCZOS)
 
     # добавляем логотип школы в центр (если файл существует)
     logo_path = "logo.png"  # путь к файлу с логотипом (лежит в папке с проектом)
