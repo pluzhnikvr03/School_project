@@ -1,13 +1,22 @@
 import telebot
 from telebot import types  # импортируем типы данных для создания кнопок и клавиатур
-import config  # берем токен и ID админа из config.py
+import config  # берем токен, ID админа и почту для бота из config.py
 from database import *  # импортируем все функции из database.py
 import excel_importer  # импортируем файл, который автоматически заносит книги в базу данных из Excel-файла
 import os  # библиотека для работы с файлами
 from datetime import datetime
 import threading  # библиотека для параллельного выполнения (бот и отвечает, и параллельно генерирует PDF)
 import time  # библиотека для управления временными интервалами (не спамить Telegram обновлениями)
-import requests  # библиотека для загрузки файла на временное облако
+
+import pickle
+import base64
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 # Словарь для отслеживания статуса генерации PDF
 pdf_generation_status = {}  # {chat_id: {'status': 'processing', ...}}
@@ -23,7 +32,7 @@ user_pending_action = {}  # {user_id: 'qr_code'} - хранит QR-код
 # Состояния для учителя
 teacher_acting_for = {}  # {teacher_id: student_tg_id} - учитель действует за ученика
 teacher_temp_data = {}  # {teacher_id: {'step': 'waiting_class', ...}} - временные данные для выбора ученика
-
+admin_email_storage = {}  # {chat_id: email} - словарь для хранения почты
 
 # ========== ИНЛАЙН КЛАВИАТУРЫ ==========
 
@@ -70,41 +79,43 @@ def create_confirm_keyboard(teacher_id):
     )
     return keyboard
 
-
-def upload_to_tempfile(file_path):   # file_path - путь к файлу, который нужно загрузить
-    # 0x0.st — бесплатный сервис без регистрации. Файлы хранятся несколько месяцев. не требует API-ключа, работает через обычный POST-запрос.
-    # Адрес сервера для загрузки файлов (0x0.st — простой и надёжный аналог tmp.ninja)
-    url = "https://0x0.st"
-
-    try:
-        # Открываем файл в бинарном режиме ('rb' — read binary)
-        # with open автоматически закроет файл после выхода из блока
-        with open(file_path, "rb") as f:
-            # Отправляем POST-запрос на сервер
-            # files={"file": f} — передаём файл с ключом "file" (сервер ожидает именно такое имя поля)
-            resp = requests.post(url, files={"file": f})
-
-        # Если сервер вернул статус 200 OK — загрузка успешна
-        if resp.status_code == 200:
-            # Сервер возвращает прямую ссылку на файл в виде текста (например, "https://0x0.st/xyz123")
-            # .strip() убирает лишние пробелы и переводы строк
-            return resp.text.strip()
-        else:
-            print(f"Ошибка 0x0.st: статус {resp.status_code}")
-            return None
-
-    except Exception as e:
-        # Если произошла любая ошибка (нет интернета, сервер не отвечает, файл не найден и т.п.)
-        # выводим сообщение в консоль для отладки
-        print(f"Ошибка загрузки на 0x0.st: {e}")
-
-        # Возвращаем None, чтобы вызывающий код понял, что загрузка не удалась
-        return None
-
-
 # ========== ФУНКЦИЯ ДЛЯ ФОНОВОЙ ГЕНЕРАЦИИ PDF ==========
 
-def generate_pdf_thread(chat_id, msg_id, filename):
+def get_gmail_service():
+    creds = None
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            raise Exception("Нет token.pickle. Запусти сначала gmail_oauth.py")
+    return build('gmail', 'v1', credentials=creds)
+
+
+def send_pdf_via_gmail(pdf_path, recipient_email):
+    service = get_gmail_service()
+    message = MIMEMultipart()
+    message['to'] = recipient_email
+    message['from'] = BOT_EMAIL   # ← теперь берётся из config.py
+    message['subject'] = "QR-коды для печати"
+
+    body = "Файл с QR-кодами готов. Вложение в письме."
+    message.attach(MIMEText(body, 'plain'))
+
+    with open(pdf_path, 'rb') as f:
+        part = MIMEBase('application', 'pdf')
+        part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(pdf_path)}"')
+        message.attach(part)
+
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    service.users().messages().send(userId='me', body={'raw': raw}).execute()
+
+
+def generate_pdf_thread(chat_id, msg_id, filename, admin_email):
     """Генерирует PDF и отправляет на временное хранилище"""
     try:
         # Функция для обновления прогресса
@@ -118,29 +129,17 @@ def generate_pdf_thread(chat_id, msg_id, filename):
                         msg_id
                     )
                 elif status == "complete":
-                    # PDF готов - теперь архивируем
-                    bot.edit_message_text("Загружаю PDF на сервер...", chat_id, msg_id)
+                    send_pdf_via_gmail(filename, admin_email)  # используем переданную почту
+                    bot.edit_message_text("Отправляю PDF на почту...", chat_id, msg_id)
 
-                    # Загружаем PDF на временное облако
-                    download_link = upload_to_tempfile(filename)
+                    recipient = "здесь_почта_администратора@example.com"  # поменяй на реальную
 
-                    # Удаляем временный PDF
+                    send_pdf_via_gmail(filename, recipient)
+
                     os.remove(filename)
 
-                    if download_link:
-                        bot.edit_message_text(
-                            f"PDF готов! Скачать: {download_link}\n\n"
-                            f"Ссылка действительна несколько дней.",
-                            chat_id,
-                            msg_id
-                        )
-                        bot.delete_message(chat_id, msg_id)
-                    else:
-                        bot.edit_message_text(
-                            "Не удалось загрузить PDF. Попробуй ещё раз.",
-                            chat_id,
-                            msg_id
-                        )
+                    bot.edit_message_text("PDF отправлен на почту", chat_id, msg_id)
+                    bot.delete_message(chat_id, msg_id)
 
                 elif status == "error":
                     error_msg = args[0]
@@ -458,9 +457,15 @@ def handle_import_books(message):
 @bot.message_handler(commands=['get_pdf'])
 def handle_get_pdf(message):
     """Отправляет PDF со всеми QR-кодами"""
+
+
     if message.from_user.id != ADMIN_ID:  # проверяем, что команду отправил администратор
         bot.reply_to(message, "Эта функция только для администратора!")
         return
+
+    if message.chat.id not in admin_email_storage:  # проверяем, что есть почта для отправки PDF
+            bot.reply_to(message, "Сначала укажите почту для отправки PDF: /set_email your@email.com")
+            return
 
     # проверяем, существует ли папка qrcodes и есть ли в ней хоть один файл
     # os.path.exists('qrcodes') — True, если папка есть
@@ -485,6 +490,24 @@ def handle_get_pdf(message):
     )
     thread.daemon = True
     thread.start()
+
+
+@bot.message_handler(commands=['set_email'])
+def set_email(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "Только администратор может настроить почту!")
+        return
+
+    try:
+        email = message.text.split()[1]
+        if '@' not in email or '.' not in email:
+            bot.reply_to(message, "Введите корректный email, например: /set_email admin@school.ru")
+            return
+
+        admin_email_storage[message.chat.id] = email
+        bot.reply_to(message, f"Почта для отправки PDF сохранена: {email}")
+    except IndexError:
+        bot.reply_to(message, "Использование: /set_email your@email.com")
 
 
 # ========== ОБРАБОТЧИК РЕГИСТРАЦИИ ==========
