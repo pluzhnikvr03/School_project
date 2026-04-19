@@ -338,7 +338,8 @@ def get_book_info(qr_code):
             'qr_code': book[1],  # qr-код
             'subject': book[2],  # предмет и название
             'author': book[3],  # автор
-            'year': book[4]  # год издания
+            'year': book[4],  # год издания
+            'class': book[5] if len(book) > 5 else ''  # класс
         }
     return None  # если книга не найдена, возвращаем None
 
