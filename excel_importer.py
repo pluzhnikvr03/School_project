@@ -7,8 +7,10 @@ from qr_generator import generate_qr_for_book  # функция создания
 from reportlab.lib.pagesizes import A4  # узнаем размер А4 листа для размещения на нем QR-кодов
 from reportlab.pdfgen import canvas  # инструмент для рисования PDF (создаем "холст")
 from reportlab.lib.utils import ImageReader  # чтение картинок (PNG, JPG) для вставки в PDF
+from database import get_book_info
 
-
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 def translator(text):
     """
@@ -37,6 +39,7 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
 
     # словарь для результата: сколько всего уникальных книг, всего экземпляров, QR-кодов, время
     result = {'added': 0, 'copies': 0, 'qrcodes': 0, 'time': 0}
+    order_counter = 0  # счетчик книг по порядку
 
     # ключ: "класс|предмет|автор|год"; значение: {'class':..., 'subject':..., 'count':...}
     # т.е. все учебники по алгебре 7 класса в одну стопку, по физике 8 класса — в другую и т.д.
@@ -262,6 +265,8 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                 else:
                     part_code = 'P0'
 
+                order_counter += 1  # номер QR
+
                 # формируем код: ПРЕДМЕТ-КЛАСС-АВТОР-ЧАСТЬ-ГОД-НОМЕР
                 qr_code = f"{subject_code}-{book['class']}-{author_code}-{part_code}-{book['year']}-{copy_num:03d}"
                 # Например: LITE-8-KOR-P1-2021-001 (часть 1)
@@ -275,7 +280,7 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                     INSERT INTO books (qr_code, subject, author, year, class, copies)
                         VALUES (?, ?, ?, ?, ?, ?)
                     ''', (qr_code, book['subject'], book['author'], book['year'], book['class'], copies))
-                    generate_qr_for_book(qr_code)
+                    generate_qr_for_book(qr_code, order_counter)
                     new_qrs += 1
                     result['qrcodes'] += 1
 
@@ -299,10 +304,13 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
 
 
 # функция создания PDF с QR-кодами
-def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
+def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None, class_range="all"):
     """
-    Создаёт PDF с QR-кодами по 30 штук на листе A4
+    Создаёт PDF с QR-кодами по 20 штук на листе A4
     """
+    # Регистрируем Arial для поддержки кириллицы (русских букв)
+    pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
+
     # создаем PDF документ
     # canvas - "холст", на котором мы будем рисовать
     # pagesize=A4 - устанавливаем размер страницы как стандартный лист A4
@@ -313,14 +321,14 @@ def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
 
     # настраиваем расположение
     # размещаем QR-коды сеткой 5 * 6 (30 штук на одном листе)
-    cols, rows = 5, 6  # 5 колонок, 6 рядов
+    cols, rows = 4, 5  # 4 колонок, 5 рядов
 
     # размер одного QR-кода в pt (100 pt ≈ 35 мм)
     # это оптимальный размер для удобного сканирования
     qr_size = 130  # увеличили для чёткости
 
     # отступы от краёв листа (чтобы QR-коды не прилипали к краям)
-    margin_x, margin_y = 40, 40  # отступы слева/справа и сверху/снизу
+    margin_x, margin_y = 20, 35  # отступы слева/справа и сверху/снизу
 
     # вычисляем шаг между QR-кодами
     # (ширина листа - 2 отступа) / на количество колонок
@@ -341,15 +349,29 @@ def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
     # создаем пустой список, куда будем складывать только PNG-файлы
     png_files = []
 
-    # проходим по каждому файлу в папке
+    # проходим по каждому файлу в папке (фильтрация)
     for file in all_files:
         # проверяем, заканчивается ли имя файла на .png
-        if file.endswith('.png'):
-            # если да — добавляем его в список PNG-файлов
-            png_files.append(file)
+        if not file.endswith('.png'):
+            continue
 
-    # сортируем список по алфавиту
-    qr_files = sorted(png_files)
+        # извлекаем класс из имени файла (например, ALGE-7-... → 7)
+        parts = file.split('-')
+        if len(parts) >= 2:
+            class_num = parts[1]  # предполагаем, что класс на второй позиции
+        else:
+            class_num = "0"
+        # фильтруем по диапазону
+        if class_range == "1_4" and int(class_num) > 4:
+            continue
+        if class_range == "5_9" and not (5 <= int(class_num) <= 9):
+            continue
+        if class_range == "10_11" and not (10 <= int(class_num) <= 11):
+            continue
+        png_files.append(file)
+
+    # не сортируем, а осталвяем в порядке добавления (как в накладной)
+    qr_files = png_files
 
     # если нет ни одного QR-кода - выходим
     if not qr_files:
@@ -376,20 +398,12 @@ def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
     for page in range(pages):
         # верхняя часть(ставим дату для удобства)
         # пишем дату создания (чтобы легче отличать версии)
-        c.setFont("Helvetica", 8)
+        c.setFont('Arial', 8)
         current_date = datetime.now().strftime('%d.%m.%Y')
         c.drawString(width - 100, height - 20, f"от {current_date}")
 
-        # нижний колонтитул (номер страницы)
-        # устанавливаем жирный шрифт, чтобы номер бросался в глаза
-        c.setFont("Helvetica-Bold", 10)
-        # рисуем номер страницы внизу по центру
-        # 30 pt от нижнего края — оптимально для глаз
-        c.drawString(width / 2 - 50, 30, f"Страница {page + 1} из {pages}")
-
-
         # расставляем QR-коды на странице
-        # проходим по всем ячейкам сетки (30 на странице)
+        # проходим по всем ячейкам сетки (20 на странице)
         for i in range(cols * rows):
             # вычисляем индекс текущего QR-кода в общем списке
             # page * 30 + i - номер QR-кода на этой странице
@@ -427,19 +441,32 @@ def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None):
 
             # добавляем текст под QR-кодом (название файла)
             # устанавливаем маленький шрифт (6 pt)
-            c.setFont("Helvetica", 6)
+            c.setFont("Arial", 6)
 
-            # убираем расширение .png из имени файла
-            code_name = qr_file.replace('.png', '')
+            # убираем префикс (например, "000001_" и расширение)
+            if '_' in qr_file:
+                qr_key = qr_file.split('_', 1)[1].replace('.png', '')
+            else:
+                qr_key = qr_file.replace('.png', '')
 
-            # если имя слишком длинное (больше 20 символов) - обрезаем
-            if len(code_name) > 20:
-                # обрезаем до 17 символов и добавляем троеточие (для красоты)
-                code_name = code_name[:17] + "..."
+            book_info = get_book_info(qr_key)
+            if book_info:
+                subject_full = book_info['subject']
+                if len(subject_full) > 15:
+                    subject_short = subject_full[:12] + ".."
+                else:
+                    subject_short = subject_full
+                author_short = book_info['author'].split()[0][:12]
+                class_num = book_info.get('class', '')
+                year = book_info['year']
+                code_name = f"{subject_short} | {class_num} | {author_short} | {year}"
+            else:
+                code_name = qr_key
 
-            # рисуем текст под QR-кодом (y - 8 означает на 8 pt ниже QR)
+            if len(code_name) > 35:
+                code_name = code_name[:32] + "..."
+
             c.drawString(x, y - 8, code_name)
-
             # увеличиваем счетчик
             processed += 1
 
