@@ -29,6 +29,27 @@ def translator(text):
     return ''.join(result)
 
 
+# функция удаляет автора из  названия предмета
+def clean_author(author, subject):
+    """
+    Удаляет из автора название предмета, если оно встречается в начале.
+    """
+    # Приводим к нижнему регистру для сравнения
+    subject_lower = subject.lower().strip()
+    author_lower = author.lower().strip()
+
+    # Если автор начинается с названия предмета
+    if author_lower.startswith(subject_lower):
+        # Убираем предмет из начала строки
+        cleaned = author[len(subject):].strip()
+        # Если после удаления осталось что-то осмысленное — возвращаем
+        if cleaned:
+            return cleaned
+
+    # Иначе возвращаем исходного автора
+    return author
+
+
 # функция работы с файлом из Excel и создания QR кодов
 def import_all_books_from_excel(filename):  # filename - путь к файлу Excel, который нам передадут
     """
@@ -254,7 +275,10 @@ def import_all_books_from_excel(filename):  # filename - путь к файлу 
                 # берём первые 4 буквы предмета
                 subject_code = translator(book['subject'][:4].upper().replace(' ', '_'))
                 # КОД АВТОРА (первые 3 буквы фамилии)
-                author_parts = book['author'].split()
+                raw_author = book['author']
+                subject = book['subject']
+                cleaned_author = clean_author(raw_author, subject)
+                author_parts = cleaned_author.split()
                 if author_parts:
                     author_code = translator(author_parts[0][:3].upper())
                 else:
@@ -452,11 +476,15 @@ def create_qr_pdf(output_filename="qrcodes.pdf", progress_callback=None, class_r
             book_info = get_book_info(qr_key)
             if book_info:
                 subject_full = book_info['subject']
-                if len(subject_full) > 15:
-                    subject_short = subject_full[:12] + ".."
-                else:
-                    subject_short = subject_full
-                author_short = book_info['author'].split()[0][:12]
+                # Берём только первое слово из названия предмета
+                subject_short = subject_full.split()[0]
+                # Если первое слово слишком длинное (>12 символов) — обрезаем
+                if len(subject_short) > 12:
+                    subject_short = subject_short[:9] + "..."
+                raw_author = book_info['author']
+                subject = book_info['subject']
+                cleaned_author = clean_author(raw_author, subject)
+                author_short = cleaned_author.split()[0][:12]
                 class_num = book_info.get('class', '')
                 year = book_info['year']
                 code_name = f"{subject_short} | {class_num} | {author_short} | {year}"
