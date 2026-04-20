@@ -32,22 +32,44 @@ def translator(text):
 # функция удаляет автора из  названия предмета
 def clean_author(author, subject):
     """
-    Удаляет из автора название предмета, если оно встречается в начале.
+    Удаляет из автора:
+    - название предмета в начале
+    - слова "класс", "учебник", "пособие", "в 2-х частях" и т.д.
+    - лишние точки и пробелы
     """
     # Приводим к нижнему регистру для сравнения
     subject_lower = subject.lower().strip()
     author_lower = author.lower().strip()
 
-    # Если автор начинается с названия предмета
+    # 1. Удаляем название предмета из начала
     if author_lower.startswith(subject_lower):
-        # Убираем предмет из начала строки
-        cleaned = author[len(subject):].strip()
-        # Если после удаления осталось что-то осмысленное — возвращаем
-        if cleaned:
-            return cleaned
+        author = author[len(subject):].strip()
 
-    # Иначе возвращаем исходного автора
-    return author
+    # 2. Удаляем мусорные фразы
+    trash_phrases = [
+        "учебник", "учебное пособие", "пособие", "в 2-х частях",
+        "в 2 частях", "в 2-х ч.", "в 2 ч.", "ч.1", "ч.2", "ч.3", "ч.4",
+        "класс", "под ред.", "под редакцией", "искусство и ты"
+    ]
+
+    for phrase in trash_phrases:
+        if phrase in author.lower():
+            author = author.lower().replace(phrase, "").strip()
+
+    # 3. Удаляем точки
+    if author.endswith('.'):
+        author = author[:-1]
+
+    if author.startswith('.'):
+        author = author[1:]
+
+
+
+    # 4. Если после очистки осталось пусто — возвращаем "Неизвестен"
+    if not author or len(author) < 2:
+        return "Неизвестен"
+
+    return author.strip()
 
 
 # функция работы с файлом из Excel и создания QR кодов
