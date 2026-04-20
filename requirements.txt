@@ -1,6 +1,9 @@
-pyTelegramBotAPI==4.19.1
-qrcode[pil]==7.4.2
-Pillow==10.1.0
+pyTelegramBotAPI==4.19.1  # библиотека для работы с Telegram ботом
+qrcode[pil]==7.4.2  # библиотека для генерации QR-кодов
+Pillow==10.1.0  # библиотека для обработки изображений
 pandas  # главная библиотека Python для работы с табличными данными
 openpyxl  # библиотека для прямого чтения и записи файлов Excel (.xlsx)
 reportlab  # библиотека для создания PDF с QR-кодами
+google-api-python-client  # библиотека для работы с Google Drive API
+google-auth-oauthlib  # библиотека для OAuth 2.0 авторизации (получение токена доступа)
+google-auth-httplib2  # библиотека для HTTP-транспорта при авторизованных запросах к Google API
