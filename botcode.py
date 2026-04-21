@@ -48,7 +48,7 @@ def create_book_action_keyboard(qr_code, user_status):
     - Для учеников: только «Взять» и «Кому принадлежит?»
     - Для учителей: все три кнопки (включая «Вернуть»)
     """
-    keyboard = types.InlineKeyboardMarkup(row_width=1)  # создаем клавиатуру с двумя кнопками в ряду
+    keyboard = types.InlineKeyboardMarkup(row_width=1)  # создаем клавиатуру с одной кнопкой в ряду
 
     # Кнопки, доступные всем
     buttons = [
